@@ -1,0 +1,2 @@
+Os binários do llama.cpp (llama-server + DLLs) são baixados por scripts/fetch-llama.{ps1,sh}
+e NÃO são versionados. Este placeholder existe para o glob de resources do Tauri nunca ficar vazio.

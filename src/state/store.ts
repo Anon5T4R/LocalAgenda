@@ -1,0 +1,273 @@
+import { create } from "zustand";
+import {
+  calendarDelete,
+  calendarSave,
+  calendarsList,
+  eventDelete,
+  eventSave,
+  eventsList,
+  inTauri,
+  settingsGet,
+  settingsSet,
+  taskDelete,
+  taskSave,
+  tasksList,
+} from "../lib/backend";
+import { addDays } from "../lib/datetime";
+import { nextOccurrenceAfter } from "../lib/recur";
+import { syncReminders } from "../lib/reminders";
+import {
+  DEFAULT_SETTINGS,
+  type AgendaEvent,
+  type Calendar,
+  type Settings,
+  type Task,
+} from "../lib/types";
+
+export type ViewKind = "month" | "week" | "day" | "agenda";
+
+function addMonths(date: Date, n: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + n, 1);
+}
+
+function normalizeEvent(p: Partial<AgendaEvent>): AgendaEvent {
+  return {
+    id: p.id ?? "",
+    calendarId: p.calendarId ?? "",
+    title: p.title ?? "",
+    description: p.description ?? "",
+    location: p.location ?? "",
+    start: p.start ?? "",
+    end: p.end ?? "",
+    allDay: p.allDay ?? false,
+    rrule: p.rrule ?? "",
+    exdates: p.exdates ?? [],
+    reminders: p.reminders ?? [],
+    createdAt: p.createdAt ?? 0,
+    updatedAt: p.updatedAt ?? 0,
+  };
+}
+
+function normalizeTask(p: Partial<Task>): Task {
+  return {
+    id: p.id ?? "",
+    title: p.title ?? "",
+    notes: p.notes ?? "",
+    due: p.due ?? "",
+    priority: p.priority ?? 0,
+    rrule: p.rrule ?? "",
+    reminders: p.reminders ?? [],
+    parentId: p.parentId ?? "",
+    doneAt: p.doneAt ?? null,
+    sort: p.sort ?? 0,
+    createdAt: p.createdAt ?? 0,
+    updatedAt: p.updatedAt ?? 0,
+  };
+}
+
+interface StoreState {
+  loaded: boolean;
+  calendars: Calendar[];
+  events: AgendaEvent[];
+  tasks: Task[];
+  settings: Settings;
+
+  view: ViewKind;
+  cursor: Date;
+  search: string;
+
+  load(): Promise<void>;
+  setView(v: ViewKind): void;
+  setCursor(d: Date): void;
+  go(delta: number): void;
+  goToday(): void;
+  setSearch(s: string): void;
+
+  saveCalendar(c: Partial<Calendar>): Promise<void>;
+  removeCalendar(id: string): Promise<void>;
+  toggleCalendar(id: string): Promise<void>;
+
+  saveEvent(e: Partial<AgendaEvent>): Promise<AgendaEvent | null>;
+  removeEvent(id: string): Promise<void>;
+  excludeOccurrence(ev: AgendaEvent, occKey: string): Promise<void>;
+
+  saveTask(t: Partial<Task>): Promise<void>;
+  removeTask(id: string): Promise<void>;
+  toggleTask(id: string): Promise<void>;
+
+  updateSettings(patch: Partial<Settings>): Promise<void>;
+  refreshReminders(): Promise<void>;
+}
+
+export const useStore = create<StoreState>((set, get) => ({
+  loaded: false,
+  calendars: [],
+  events: [],
+  tasks: [],
+  settings: { ...DEFAULT_SETTINGS },
+
+  view: "month",
+  cursor: new Date(),
+  search: "",
+
+  async load() {
+    if (!inTauri()) {
+      set({ loaded: true });
+      return;
+    }
+    try {
+      const [calendars, events, tasks, rawSettings] = await Promise.all([
+        calendarsList(),
+        eventsList(),
+        tasksList(),
+        settingsGet(),
+      ]);
+      const settings = { ...DEFAULT_SETTINGS, ...rawSettings } as Settings;
+      set({ calendars, events, tasks, settings, loaded: true });
+      void get().refreshReminders();
+    } catch (e) {
+      console.error("falha ao carregar", e);
+      set({ loaded: true });
+    }
+  },
+
+  setView: (view) => set({ view }),
+  setCursor: (cursor) => set({ cursor }),
+  goToday: () => set({ cursor: new Date() }),
+  setSearch: (search) => set({ search }),
+
+  go(delta) {
+    const { view, cursor } = get();
+    if (view === "month") set({ cursor: addMonths(cursor, delta) });
+    else if (view === "week" || view === "agenda") set({ cursor: addDays(cursor, delta * 7) });
+    else set({ cursor: addDays(cursor, delta) });
+  },
+
+  async saveCalendar(c) {
+    const cal: Calendar = {
+      id: c.id ?? "",
+      name: c.name ?? "Calendário",
+      color: c.color ?? "#2563eb",
+      visible: c.visible ?? true,
+      sort: c.sort ?? get().calendars.length,
+    };
+    const saved = await calendarSave(cal);
+    const rest = get().calendars.filter((x) => x.id !== saved.id);
+    set({ calendars: [...rest, saved].sort((a, b) => a.sort - b.sort) });
+  },
+
+  async removeCalendar(id) {
+    await calendarDelete(id);
+    set({
+      calendars: get().calendars.filter((c) => c.id !== id),
+      events: get().events.filter((e) => e.calendarId !== id),
+    });
+    void get().refreshReminders();
+  },
+
+  async toggleCalendar(id) {
+    const cal = get().calendars.find((c) => c.id === id);
+    if (!cal) return;
+    await get().saveCalendar({ ...cal, visible: !cal.visible });
+  },
+
+  async saveEvent(e) {
+    const ev = normalizeEvent(e);
+    if (!ev.calendarId) ev.calendarId = get().calendars[0]?.id ?? "";
+    const saved = await eventSave(ev);
+    const rest = get().events.filter((x) => x.id !== saved.id);
+    set({ events: [...rest, saved] });
+    void get().refreshReminders();
+    return saved;
+  },
+
+  async removeEvent(id) {
+    await eventDelete(id);
+    set({ events: get().events.filter((e) => e.id !== id) });
+    void get().refreshReminders();
+  },
+
+  async excludeOccurrence(ev, occKey) {
+    if (ev.exdates.includes(occKey)) return;
+    await get().saveEvent({ ...ev, exdates: [...ev.exdates, occKey] });
+  },
+
+  async saveTask(t) {
+    const task = normalizeTask(t);
+    if (task.sort === 0) task.sort = get().tasks.length;
+    const saved = await taskSave(task);
+    const rest = get().tasks.filter((x) => x.id !== saved.id);
+    set({ tasks: [...rest, saved] });
+    void get().refreshReminders();
+  },
+
+  async removeTask(id) {
+    await taskDelete(id);
+    set({ tasks: get().tasks.filter((t) => t.id !== id && t.parentId !== id) });
+    void get().refreshReminders();
+  },
+
+  async toggleTask(id) {
+    const t = get().tasks.find((x) => x.id === id);
+    if (!t) return;
+    const completing = !t.doneAt;
+    // Tarefa recorrente sendo concluída: rola pro próximo prazo em vez de fechar.
+    if (completing && t.rrule && t.due) {
+      const from = new Date(new Date(t.due).getTime());
+      const next = nextOccurrenceAfter(t.rrule, from, from);
+      if (next) {
+        const nextDue = t.due.includes("T")
+          ? `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}T${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`
+          : `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+        await get().saveTask({ ...t, due: nextDue, doneAt: null });
+        return;
+      }
+    }
+    await get().saveTask({ ...t, doneAt: completing ? Date.now() : null });
+  },
+
+  async updateSettings(patch) {
+    const settings = { ...get().settings, ...patch };
+    set({ settings });
+    if (inTauri()) {
+      await settingsSet(settings);
+      void get().refreshReminders();
+    }
+  },
+
+  async refreshReminders() {
+    if (!inTauri()) return;
+    const { events, tasks, settings } = get();
+    try {
+      await syncReminders(events, tasks, settings);
+    } catch (e) {
+      console.error("falha ao sincronizar lembretes", e);
+    }
+  },
+}));
+
+/** Mapa id→cor de calendário. */
+export function calendarColorMap(calendars: Calendar[]): Record<string, string> {
+  const m: Record<string, string> = {};
+  for (const c of calendars) m[c.id] = c.color;
+  return m;
+}
+
+/** Eventos dos calendários visíveis, opcionalmente filtrados pela busca. */
+export function visibleEvents(state: {
+  events: AgendaEvent[];
+  calendars: Calendar[];
+  search: string;
+}): AgendaEvent[] {
+  const hidden = new Set(state.calendars.filter((c) => !c.visible).map((c) => c.id));
+  const q = state.search.trim().toLowerCase();
+  return state.events.filter((e) => {
+    if (hidden.has(e.calendarId)) return false;
+    if (!q) return true;
+    return (
+      e.title.toLowerCase().includes(q) ||
+      e.location.toLowerCase().includes(q) ||
+      e.description.toLowerCase().includes(q)
+    );
+  });
+}
