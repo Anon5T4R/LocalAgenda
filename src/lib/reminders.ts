@@ -5,7 +5,7 @@
 import { remindersDispatch, remindersReplace } from "./backend";
 import { addDays, dateKey, fmtTime, parseLocal, sameDay, startOfDay } from "./datetime";
 import { expandAll, expandEvent } from "./recur";
-import type { AgendaEvent, Reminder, Settings, Task } from "./types";
+import type { Alarm, AgendaEvent, Reminder, Settings, Task } from "./types";
 
 const HORIZON_DAYS = 30;
 const GRACE_MS = 10 * 60 * 1000; // lembretes vencidos há < 10 min ainda disparam 1×
@@ -31,7 +31,12 @@ function summaryBody(events: number, tasks: number): string {
 }
 
 /** Calcula todas as linhas de lembrete pra janela rolante. */
-export function buildReminders(events: AgendaEvent[], tasks: Task[], settings: Settings): Reminder[] {
+export function buildReminders(
+  events: AgendaEvent[],
+  tasks: Task[],
+  settings: Settings,
+  alarms: Alarm[] = [],
+): Reminder[] {
   const now = Date.now();
   const nowD = new Date();
   const horizon = addDays(startOfDay(nowD), HORIZON_DAYS);
@@ -79,6 +84,28 @@ export function buildReminders(events: AgendaEvent[], tasks: Task[], settings: S
     }
   }
 
+  // Alarmes (módulo Relógio): próximos HORIZON dias, no horário e dias marcados.
+  for (const al of alarms) {
+    if (!al.enabled || !al.time) continue;
+    const [h, m] = al.time.split(":").map(Number);
+    for (let i = 0; i < HORIZON_DAYS; i++) {
+      const day = addDays(startOfDay(nowD), i);
+      if (al.days.length && !al.days.includes(day.getDay())) continue;
+      const at = new Date(day);
+      at.setHours(h || 0, m || 0, 0, 0);
+      push({
+        id: `alarm:${al.id}:${dateKey(day)}`,
+        kind: "alarm",
+        refId: al.id,
+        occ: dateKey(day),
+        title: al.label ? `⏰ ${al.label}` : "⏰ Alarme",
+        body: `Alarme das ${al.time}`,
+        fireAt: at.getTime(),
+        fired: false,
+      });
+    }
+  }
+
   // Resumo do dia (notificação inteligente): próximos 7 dias, um por dia com
   // conteúdo, no horário escolhido.
   if (settings.dailySummary) {
@@ -111,8 +138,9 @@ export async function syncReminders(
   events: AgendaEvent[],
   tasks: Task[],
   settings: Settings,
+  alarms: Alarm[] = [],
 ): Promise<void> {
-  const items = buildReminders(events, tasks, settings);
+  const items = buildReminders(events, tasks, settings, alarms);
   await remindersReplace(items);
   await remindersDispatch();
 }

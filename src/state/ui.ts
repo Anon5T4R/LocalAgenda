@@ -12,17 +12,21 @@ export interface ToastItem {
 
 interface UiState {
   eventDraft: Partial<AgendaEvent> | null;
+  /** Início ISO da ocorrência clicada (evento recorrente) — habilita escopo. */
+  eventOccStart: string | null;
   taskDraft: Partial<Task> | null;
   showSettings: boolean;
   showAi: boolean;
+  showClock: boolean;
   toasts: ToastItem[];
 
-  openEvent(draft: Partial<AgendaEvent>): void;
+  openEvent(draft: Partial<AgendaEvent>, occStart?: string): void;
   closeEvent(): void;
   openTask(draft: Partial<Task>): void;
   closeTask(): void;
   setSettings(v: boolean): void;
   setAi(v: boolean): void;
+  setClock(v: boolean): void;
 
   pushToast(t: ToastItem): void;
   dismissToast(id: string): void;
@@ -30,17 +34,20 @@ interface UiState {
 
 export const useUi = create<UiState>((set, get) => ({
   eventDraft: null,
+  eventOccStart: null,
   taskDraft: null,
   showSettings: false,
   showAi: false,
+  showClock: false,
   toasts: [],
 
-  openEvent: (eventDraft) => set({ eventDraft }),
-  closeEvent: () => set({ eventDraft: null }),
+  openEvent: (eventDraft, occStart) => set({ eventDraft, eventOccStart: occStart ?? null }),
+  closeEvent: () => set({ eventDraft: null, eventOccStart: null }),
   openTask: (taskDraft) => set({ taskDraft }),
   closeTask: () => set({ taskDraft: null }),
   setSettings: (showSettings) => set({ showSettings }),
   setAi: (showAi) => set({ showAi }),
+  setClock: (showClock) => set({ showClock }),
 
   pushToast: (t) => {
     // evita empilhar o mesmo lembrete duas vezes

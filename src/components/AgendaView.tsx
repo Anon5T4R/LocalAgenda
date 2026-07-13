@@ -50,7 +50,7 @@ export function AgendaView() {
             </div>
             <div className="agenda-items">
               {items.map((o, i) => (
-                <div key={o.event.id + i} className="agenda-item" onClick={() => openEvent({ ...o.event })}>
+                <div key={o.event.id + i} className="agenda-item" onClick={() => openEvent({ ...o.event }, o.occKey)}>
                   <span className="cdot" style={{ background: colors[o.event.calendarId] ?? "#2563eb" }} />
                   <span className="atime">
                     {o.event.allDay ? "Dia todo" : `${fmtTime(o.start)} – ${fmtTime(o.end)}`}

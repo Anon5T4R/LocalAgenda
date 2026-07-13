@@ -2,6 +2,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { autostartGet, autostartSet, dbExport, dbImport, inTauri, readFileBase64, writeTextFile } from "../lib/backend";
 import { exportIcs, parseIcs } from "../lib/ics";
+import { playChime } from "../lib/sound";
 import { CALENDAR_COLORS, type Calendar } from "../lib/types";
 import { useStore } from "../state/store";
 import { useUi } from "../state/ui";
@@ -128,6 +129,34 @@ export function SettingsModal() {
                   onChange={(e) => updateSettings({ dailySummaryTime: e.target.value })}
                   style={{ width: 120 }}
                 />
+              </div>
+            )}
+          </div>
+
+          <div className="field">
+            <label className="inline" style={{ cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={settings.soundEnabled}
+                onChange={(e) => updateSettings({ soundEnabled: e.target.checked })}
+                style={{ width: "auto" }}
+              />
+              Som nas notificações e alarmes
+            </label>
+            {settings.soundEnabled && (
+              <div className="inline" style={{ marginTop: 6, gap: 10 }}>
+                <span className="hint">Volume</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={Math.round(settings.soundVolume * 100)}
+                  onChange={(e) => updateSettings({ soundVolume: +e.target.value / 100 })}
+                  style={{ flex: 1 }}
+                />
+                <button className="btn ghost" onClick={() => playChime(settings.soundVolume)}>
+                  ▶ Testar
+                </button>
               </div>
             )}
           </div>

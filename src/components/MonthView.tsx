@@ -100,12 +100,12 @@ function Chip({
 }: {
   occ: Occurrence;
   color?: string;
-  onOpen(draft: any): void;
+  onOpen(draft: any, occStart?: string): void;
 }) {
   const c = color ?? "#2563eb";
   const open = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onOpen({ ...occ.event });
+    onOpen({ ...occ.event }, occ.occKey);
   };
   if (occ.event.allDay) {
     return (

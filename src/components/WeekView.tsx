@@ -79,7 +79,7 @@ export function WeekView({ days }: Props) {
                 key={o.event.id + i}
                 className="chip allday"
                 style={{ background: colors[o.event.calendarId] ?? "#2563eb" }}
-                onClick={() => openEvent({ ...o.event })}
+                onClick={() => openEvent({ ...o.event }, o.occKey)}
                 title={o.event.title}
               >
                 {o.event.title || "(sem título)"}
@@ -128,7 +128,7 @@ export function WeekView({ days }: Props) {
                     width: `calc(${p.width * 100}% - 6px)`,
                     background: colors[p.occ.event.calendarId] ?? "#2563eb",
                   }}
-                  onClick={() => openEvent({ ...p.occ.event })}
+                  onClick={() => openEvent({ ...p.occ.event }, p.occ.occKey)}
                   title={p.occ.event.title}
                 >
                   <div className="tt">

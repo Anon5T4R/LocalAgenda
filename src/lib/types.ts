@@ -46,9 +46,20 @@ export interface Task {
   updatedAt: number;
 }
 
+export interface Alarm {
+  id: string;
+  /** "HH:MM" local. */
+  time: string;
+  label: string;
+  /** Dias da semana (0=domingo…6=sábado); vazio = todo dia. */
+  days: number[];
+  enabled: boolean;
+  sort: number;
+}
+
 export interface Reminder {
   id: string;
-  kind: "event" | "task" | "summary";
+  kind: "event" | "task" | "summary" | "alarm";
   refId: string;
   occ: string;
   title: string;
@@ -73,6 +84,10 @@ export interface Settings {
   modelDir: string;
   /** Camadas na GPU pro llama (0 = só CPU). */
   nGpuLayers: number;
+  /** Som nas notificações/alarmes. */
+  soundEnabled: boolean;
+  /** Volume do som (0..1). */
+  soundVolume: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -84,6 +99,8 @@ export const DEFAULT_SETTINGS: Settings = {
   dailySummaryTime: "08:00",
   modelDir: "",
   nGpuLayers: 0,
+  soundEnabled: true,
+  soundVolume: 0.7,
 };
 
 export const CALENDAR_COLORS = [

@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { AgendaView } from "./components/AgendaView";
 import { AiPanel } from "./components/AiPanel";
+import { ClockModal } from "./components/ClockModal";
 import { EventModal } from "./components/EventModal";
 import { MonthView } from "./components/MonthView";
 import { SettingsModal } from "./components/SettingsModal";
@@ -11,10 +12,12 @@ import { TaskModal } from "./components/TaskModal";
 import { Toasts } from "./components/Toasts";
 import { TopBar } from "./components/TopBar";
 import { WeekView } from "./components/WeekView";
-import { getStartupFile, inTauri, readFileBase64 } from "./lib/backend";
+import { getStartupFile, inTauri, notify, readFileBase64 } from "./lib/backend";
 import { addDays, startOfWeek } from "./lib/datetime";
 import { parseIcs } from "./lib/ics";
+import { armAudio, playChime, startAlarmSound } from "./lib/sound";
 import type { Reminder } from "./lib/types";
+import { useClock } from "./state/clock";
 import { useStore } from "./state/store";
 import { useUi } from "./state/ui";
 
@@ -50,22 +53,54 @@ export default function App() {
     }
   }, [settings.theme]);
 
-  // Lembretes disparados pelo Rust → toast in-app (com adiar).
+  // Áudio precisa de um gesto do usuário pra "destravar"; arma no 1º clique/tecla.
+  useEffect(() => {
+    const arm = () => armAudio();
+    window.addEventListener("pointerdown", arm);
+    window.addEventListener("keydown", arm);
+    return () => {
+      window.removeEventListener("pointerdown", arm);
+      window.removeEventListener("keydown", arm);
+    };
+  }, []);
+
+  // Lembretes disparados pelo Rust → toast in-app (com adiar) + som.
   useEffect(() => {
     if (!inTauri()) return;
     const un = listen<Reminder>("reminder-fired", (e) => {
       const r = e.payload;
+      const id = crypto.randomUUID();
+      const snoozable = r.kind === "event" || r.kind === "task";
       useUi.getState().pushToast({
-        id: crypto.randomUUID(),
+        id,
         title: r.title,
         body: r.body,
-        reminderId: r.kind === "summary" ? undefined : r.id,
+        reminderId: snoozable ? r.id : undefined,
         kind: r.kind,
       });
+      const { soundEnabled, soundVolume } = useStore.getState().settings;
+      if (soundEnabled) {
+        if (r.kind === "alarm") startAlarmSound(id, soundVolume);
+        else playChime(soundVolume);
+      }
     });
     return () => {
       void un.then((f) => f());
     };
+  }, []);
+
+  // Fim do timer (módulo Relógio): checa a cada 500ms — funciona na bandeja.
+  useEffect(() => {
+    const iv = setInterval(() => {
+      if (useClock.getState().fireTimer()) {
+        const id = crypto.randomUUID();
+        useUi.getState().pushToast({ id, title: "⏲️ Timer", body: "Tempo esgotado!", kind: "timer" });
+        const { soundEnabled, soundVolume } = useStore.getState().settings;
+        if (soundEnabled) startAlarmSound(id, soundVolume);
+        if (inTauri()) void notify("⏲️ Timer", "Tempo esgotado!");
+      }
+    }, 500);
+    return () => clearInterval(iv);
   }, []);
 
   // Abrir um .ics (arg de linha de comando ou "abrir com" numa 2ª instância).
@@ -107,7 +142,7 @@ export default function App() {
       const el = e.target as HTMLElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
       const st = useUi.getState();
-      if (st.eventDraft || st.taskDraft || st.showSettings || st.showAi) return;
+      if (st.eventDraft || st.taskDraft || st.showSettings || st.showAi || st.showClock) return;
       switch (e.key) {
         case "ArrowLeft":
           go(-1);
@@ -133,6 +168,9 @@ export default function App() {
           break;
         case "n":
           useUi.getState().openEvent({ start: "", end: "" });
+          break;
+        case "c":
+          useUi.getState().setClock(true);
           break;
         default:
           return;
@@ -164,6 +202,7 @@ export default function App() {
       {ui.taskDraft && <TaskModal />}
       {ui.showSettings && <SettingsModal />}
       {ui.showAi && <AiPanel />}
+      {ui.showClock && <ClockModal />}
       <Toasts />
     </div>
   );

@@ -33,10 +33,12 @@ function splitIso(iso: string, fallbackDate: string, fallbackTime: string) {
 
 export function EventModal() {
   const draft = useUi((s) => s.eventDraft)!;
+  const occStart = useUi((s) => s.eventOccStart);
   const close = useUi((s) => s.closeEvent);
   const { calendars, cursor, settings, saveEvent, removeEvent, excludeOccurrence } = useStore();
 
   const isEdit = !!draft.id;
+  const recurringScope = isEdit && !!draft.rrule && !!occStart;
   const defDate = toIso(draft.start ? parseLocal(draft.start) : cursor, true);
   const defTime = draft.start && draft.start.includes("T") ? draft.start.split("T")[1] : toIso(nextSlot()).split("T")[1];
 
@@ -57,15 +59,16 @@ export function EventModal() {
   const [location, setLocation] = useState(draft.location ?? "");
   const [description, setDescription] = useState(draft.description ?? "");
   const [remSel, setRemSel] = useState("60");
+  const [scope, setScope] = useState<"this" | "series">("series");
 
   const rruleStr = useMemo(() => buildRRuleString(recur), [recur]);
 
-  const save = () => {
+  // Campos editados (sem decidir id/série).
+  const fields = (): Partial<AgendaEvent> => {
     const start = allDay ? startDate : `${startDate}T${startTime}`;
     let end = allDay ? endDate : `${endDate}T${endTime}`;
     if (parseLocal(end).getTime() < parseLocal(start).getTime()) end = start;
-    void saveEvent({
-      id: draft.id,
+    return {
       calendarId,
       title: title.trim() || "(sem título)",
       description,
@@ -73,11 +76,38 @@ export function EventModal() {
       start,
       end,
       allDay,
-      rrule: rruleStr,
-      exdates: draft.exdates ?? [],
       reminders,
-      createdAt: draft.createdAt,
-    });
+    };
+  };
+
+  const save = async () => {
+    if (recurringScope && scope === "this" && occStart) {
+      // Destaca esta ocorrência: exclui da série e cria um evento avulso editado.
+      await excludeOccurrence(draft as AgendaEvent, occStart);
+      await saveEvent({ ...fields(), id: "", rrule: "", exdates: [] });
+    } else {
+      await saveEvent({
+        ...fields(),
+        id: draft.id,
+        rrule: rruleStr,
+        exdates: draft.exdates ?? [],
+        createdAt: draft.createdAt,
+      });
+    }
+    close();
+  };
+
+  const del = () => {
+    if (recurringScope && scope === "this" && occStart) {
+      void excludeOccurrence(draft as AgendaEvent, occStart);
+    } else if (draft.id) {
+      void removeEvent(draft.id);
+    }
+    close();
+  };
+
+  const duplicate = () => {
+    void saveEvent({ ...fields(), id: "", rrule: rruleStr, exdates: [], createdAt: 0 });
     close();
   };
 
@@ -134,7 +164,23 @@ export function EventModal() {
             </div>
           </div>
 
-          <div className="recur-block">
+          {recurringScope && (
+            <div className="recur-block">
+              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>Aplicar alterações a</label>
+              <div className="inline" style={{ gap: 16 }}>
+                <label className="inline" style={{ cursor: "pointer", gap: 6 }}>
+                  <input type="radio" checked={scope === "this"} onChange={() => setScope("this")} style={{ width: "auto" }} />
+                  Somente esta ocorrência
+                </label>
+                <label className="inline" style={{ cursor: "pointer", gap: 6 }}>
+                  <input type="radio" checked={scope === "series"} onChange={() => setScope("series")} style={{ width: "auto" }} />
+                  Toda a série
+                </label>
+              </div>
+            </div>
+          )}
+
+          <div className="recur-block" style={recurringScope && scope === "this" ? { opacity: 0.5, pointerEvents: "none" } : undefined}>
             <div className="row">
               <div className="field">
                 <label>Repetição</label>
@@ -251,33 +297,20 @@ export function EventModal() {
 
         <div className="modal-foot">
           {isEdit && (
-            <button
-              className="btn danger"
-              onClick={() => {
-                if (draft.id) void removeEvent(draft.id);
-                close();
-              }}
-            >
+            <button className="btn danger" onClick={del}>
               Excluir
             </button>
           )}
-          {isEdit && draft.rrule && draft.start && (
-            <button
-              className="btn ghost"
-              title="Remove apenas esta data da série"
-              onClick={() => {
-                void excludeOccurrence(draft as AgendaEvent, toIso(parseLocal(draft.start!), draft.allDay));
-                close();
-              }}
-            >
-              Pular esta ocorrência
+          {isEdit && (
+            <button className="btn ghost" title="Criar uma cópia" onClick={duplicate}>
+              Duplicar
             </button>
           )}
           <div className="spacer" />
           <button className="btn" onClick={close}>
             Cancelar
           </button>
-          <button className="btn primary" onClick={save}>
+          <button className="btn primary" onClick={() => void save()}>
             Salvar
           </button>
         </div>

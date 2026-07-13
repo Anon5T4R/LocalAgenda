@@ -54,6 +54,9 @@ export function TopBar() {
         ))}
       </div>
 
+      <button className="icon-btn" title="Relógio (alarmes, timer, cronômetro)" onClick={() => useUi.getState().setClock(true)}>
+        ⏰
+      </button>
       <button className="icon-btn" title="IA" onClick={() => setAi(true)}>
         ✨
       </button>

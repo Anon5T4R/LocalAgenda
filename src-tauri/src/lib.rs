@@ -97,6 +97,13 @@ fn reminders_dispatch(app: tauri::AppHandle, db: State<'_, Db>) {
     dispatch_due(&app, &db);
 }
 
+/// Notificação de desktop avulsa (fim de timer, etc.) — o toast e o som ficam no
+/// front; isto garante o aviso do SO mesmo com a janela na bandeja.
+#[tauri::command(async)]
+fn notify(app: tauri::AppHandle, title: String, body: String) {
+    let _ = app.notification().builder().title(title).body(body).show();
+}
+
 /// Traz a janela de volta da bandeja.
 fn open_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -200,6 +207,10 @@ pub fn run() {
             autostart_get,
             autostart_set,
             reminders_dispatch,
+            notify,
+            db::alarms_list,
+            db::alarm_save,
+            db::alarm_delete,
             db::calendars_list,
             db::calendar_save,
             db::calendar_delete,

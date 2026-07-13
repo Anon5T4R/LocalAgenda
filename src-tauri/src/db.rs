@@ -143,6 +143,23 @@ pub struct Reminder {
     pub fired: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Alarm {
+    pub id: String,
+    /// "HH:MM" local.
+    pub time: String,
+    #[serde(default)]
+    pub label: String,
+    /// Dias da semana (0=domingo…6=sábado); vazio = todo dia.
+    #[serde(default)]
+    pub days: Vec<i64>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub sort: i64,
+}
+
 // ----------------------------------------------------------------------------
 // Abertura / schema
 // ----------------------------------------------------------------------------
@@ -211,6 +228,14 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
             body TEXT NOT NULL DEFAULT '',
             fire_at INTEGER NOT NULL,
             fired INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS alarms (
+            id TEXT PRIMARY KEY,
+            time TEXT NOT NULL,
+            label TEXT NOT NULL DEFAULT '',
+            days TEXT NOT NULL DEFAULT '[]',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            sort INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_events_cal ON events(calendar_id);
         CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(fired, fire_at);
@@ -546,6 +571,63 @@ pub fn take_due_reminders(db: &Db, now: i64) -> Vec<Reminder> {
         Ok(items)
     });
     out.unwrap_or_default()
+}
+
+// ----------------------------------------------------------------------------
+// Alarmes (do módulo Relógio) — materializados em `reminders` pelo front.
+// ----------------------------------------------------------------------------
+
+fn row_to_alarm(r: &rusqlite::Row) -> rusqlite::Result<Alarm> {
+    let days: String = r.get(3)?;
+    Ok(Alarm {
+        id: r.get(0)?,
+        time: r.get(1)?,
+        label: r.get(2)?,
+        days: serde_json::from_str(&days).unwrap_or_default(),
+        enabled: r.get::<_, i64>(4)? != 0,
+        sort: r.get(5)?,
+    })
+}
+
+#[tauri::command(async)]
+pub fn alarms_list(db: State<'_, Db>) -> Result<Vec<Alarm>, String> {
+    with_conn(&db, |conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, time, label, days, enabled, sort FROM alarms ORDER BY sort, time")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], row_to_alarm).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+
+#[tauri::command(async)]
+pub fn alarm_save(db: State<'_, Db>, alarm: Alarm) -> Result<Alarm, String> {
+    let mut a = alarm;
+    if a.id.is_empty() {
+        a.id = gen_id("alarm");
+    }
+    let days = serde_json::to_string(&a.days).unwrap_or_else(|_| "[]".into());
+    with_conn(&db, |conn| {
+        conn.execute(
+            "INSERT INTO alarms(id, time, label, days, enabled, sort) VALUES(?1,?2,?3,?4,?5,?6)
+             ON CONFLICT(id) DO UPDATE SET time=?2, label=?3, days=?4, enabled=?5, sort=?6",
+            params![a.id, a.time, a.label, days, a.enabled as i64, a.sort],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })?;
+    Ok(a)
+}
+
+#[tauri::command(async)]
+pub fn alarm_delete(db: State<'_, Db>, id: String) -> Result<(), String> {
+    with_conn(&db, |conn| {
+        conn.execute("DELETE FROM alarms WHERE id=?1", params![id])
+            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM reminders WHERE kind='alarm' AND ref_id=?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
 }
 
 // ----------------------------------------------------------------------------

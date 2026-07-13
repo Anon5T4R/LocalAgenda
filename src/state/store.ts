@@ -1,5 +1,8 @@
 import { create } from "zustand";
 import {
+  alarmDelete,
+  alarmSave,
+  alarmsList,
   calendarDelete,
   calendarSave,
   calendarsList,
@@ -18,6 +21,7 @@ import { nextOccurrenceAfter } from "../lib/recur";
 import { syncReminders } from "../lib/reminders";
 import {
   DEFAULT_SETTINGS,
+  type Alarm,
   type AgendaEvent,
   type Calendar,
   type Settings,
@@ -70,6 +74,7 @@ interface StoreState {
   calendars: Calendar[];
   events: AgendaEvent[];
   tasks: Task[];
+  alarms: Alarm[];
   settings: Settings;
 
   view: ViewKind;
@@ -77,6 +82,9 @@ interface StoreState {
   search: string;
 
   load(): Promise<void>;
+  saveAlarm(a: Partial<Alarm>): Promise<void>;
+  removeAlarm(id: string): Promise<void>;
+  toggleAlarm(id: string): Promise<void>;
   setView(v: ViewKind): void;
   setCursor(d: Date): void;
   go(delta: number): void;
@@ -104,6 +112,7 @@ export const useStore = create<StoreState>((set, get) => ({
   calendars: [],
   events: [],
   tasks: [],
+  alarms: [],
   settings: { ...DEFAULT_SETTINGS },
 
   view: "month",
@@ -116,14 +125,15 @@ export const useStore = create<StoreState>((set, get) => ({
       return;
     }
     try {
-      const [calendars, events, tasks, rawSettings] = await Promise.all([
+      const [calendars, events, tasks, alarms, rawSettings] = await Promise.all([
         calendarsList(),
         eventsList(),
         tasksList(),
+        alarmsList(),
         settingsGet(),
       ]);
       const settings = { ...DEFAULT_SETTINGS, ...rawSettings } as Settings;
-      set({ calendars, events, tasks, settings, loaded: true });
+      set({ calendars, events, tasks, alarms, settings, loaded: true });
       void get().refreshReminders();
     } catch (e) {
       console.error("falha ao carregar", e);
@@ -226,6 +236,33 @@ export const useStore = create<StoreState>((set, get) => ({
     await get().saveTask({ ...t, doneAt: completing ? Date.now() : null });
   },
 
+  async saveAlarm(a) {
+    const alarm: Alarm = {
+      id: a.id ?? "",
+      time: a.time ?? "07:00",
+      label: a.label ?? "",
+      days: a.days ?? [],
+      enabled: a.enabled ?? true,
+      sort: a.sort ?? get().alarms.length,
+    };
+    const saved = await alarmSave(alarm);
+    const rest = get().alarms.filter((x) => x.id !== saved.id);
+    set({ alarms: [...rest, saved].sort((x, y) => x.sort - y.sort) });
+    void get().refreshReminders();
+  },
+
+  async removeAlarm(id) {
+    await alarmDelete(id);
+    set({ alarms: get().alarms.filter((a) => a.id !== id) });
+    void get().refreshReminders();
+  },
+
+  async toggleAlarm(id) {
+    const a = get().alarms.find((x) => x.id === id);
+    if (!a) return;
+    await get().saveAlarm({ ...a, enabled: !a.enabled });
+  },
+
   async updateSettings(patch) {
     const settings = { ...get().settings, ...patch };
     set({ settings });
@@ -237,9 +274,9 @@ export const useStore = create<StoreState>((set, get) => ({
 
   async refreshReminders() {
     if (!inTauri()) return;
-    const { events, tasks, settings } = get();
+    const { events, tasks, settings, alarms } = get();
     try {
-      await syncReminders(events, tasks, settings);
+      await syncReminders(events, tasks, settings, alarms);
     } catch (e) {
       console.error("falha ao sincronizar lembretes", e);
     }

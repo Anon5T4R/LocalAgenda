@@ -3,7 +3,7 @@
 // pra a UI ainda renderizar.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { AgendaEvent, Calendar, Reminder, Settings, Task } from "./types";
+import type { Alarm, AgendaEvent, Calendar, Reminder, Settings, Task } from "./types";
 
 export function inTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -40,6 +40,12 @@ export const remindersReplace = (items: Reminder[]) => cmd<void>("reminders_repl
 export const reminderSnooze = (id: string, minutes: number) =>
   cmd<void>("reminder_snooze", { id, minutes });
 export const remindersDispatch = () => cmd<void>("reminders_dispatch");
+export const notify = (title: string, body: string) => cmd<void>("notify", { title, body });
+
+// --- alarmes ---
+export const alarmsList = () => cmd<Alarm[]>("alarms_list");
+export const alarmSave = (alarm: Alarm) => cmd<Alarm>("alarm_save", { alarm });
+export const alarmDelete = (id: string) => cmd<void>("alarm_delete", { id });
 
 // --- configurações ---
 export const settingsGet = () => cmd<Partial<Settings>>("settings_get");

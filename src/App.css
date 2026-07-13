@@ -1001,6 +1001,29 @@ textarea:focus {
   background: var(--border);
   color: var(--text);
 }
+.toast.ringing {
+  border-left-color: var(--danger);
+  animation: ringpulse 1s ease-in-out infinite;
+}
+@keyframes ringpulse {
+  0%, 100% {
+    box-shadow: var(--shadow);
+  }
+  50% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 40%, transparent), var(--shadow);
+  }
+}
+.toast .snooze .stop-btn {
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+  padding: 5px 14px;
+}
+.toast .snooze .stop-btn:hover {
+  filter: brightness(1.08);
+  background: var(--danger);
+  color: #fff;
+}
 
 /* ---------- misc ---------- */
 .loading {
@@ -1021,4 +1044,156 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* ---------- clock module ---------- */
+.clock-now {
+  text-align: center;
+  margin-bottom: 4px;
+}
+.clock-time {
+  font-size: 46px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+}
+.clock-time .clock-sec {
+  font-size: 24px;
+  color: var(--text-dim);
+}
+.clock-date {
+  color: var(--text-dim);
+  font-size: 13px;
+  text-transform: capitalize;
+}
+.clock-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+.alarm-add {
+  display: flex;
+  gap: 6px;
+}
+.alarm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.alarm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 8px;
+}
+.alarm-row:hover {
+  background: var(--surface-2);
+}
+.alarm-row.off {
+  opacity: 0.5;
+}
+.alarm-time {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  width: 68px;
+}
+.alarm-info {
+  flex: 1;
+  min-width: 0;
+}
+.alarm-label {
+  font-weight: 500;
+}
+.alarm-days {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+}
+.switch {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--border-strong);
+  position: relative;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.switch.on {
+  background: var(--accent);
+}
+.switch .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+}
+.switch.on .knob {
+  left: 23px;
+}
+.big-time {
+  font-size: 58px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+}
+.mono {
+  font-variant-numeric: tabular-nums;
+}
+.progress-bar {
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.25s linear;
+}
+.preset-row {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.clock-controls {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.clock-controls .btn {
+  min-width: 100px;
+  justify-content: center;
+  padding: 10px 14px;
+}
+.laps {
+  max-height: 160px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+.lap-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 4px;
+  font-size: 13px;
+}
+.lap-n {
+  flex: 1;
+  color: var(--text-dim);
+}
+.lap-split {
+  color: var(--text-faint);
+  font-size: 12px;
 }
