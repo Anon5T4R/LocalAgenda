@@ -1,25 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2563eb"/>
-      <stop offset="1" stop-color="#22d3ee"/>
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#06b6d4"/>
     </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#0b2a6b" flood-opacity="0.35"/>
+    </filter>
   </defs>
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
-  <!-- calendário -->
-  <g fill="#ffffff">
-    <rect x="248" y="272" width="528" height="452" rx="56" fill="#ffffff"/>
-    <rect x="248" y="272" width="528" height="120" rx="56" fill="#ffffff"/>
+
+  <!-- App tile -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#bg)"/>
+
+  <!-- Calendar card -->
+  <g filter="url(#shadow)">
+    <rect x="212" y="214" width="600" height="612" rx="44" fill="#ffffff"/>
+    <!-- header band (domain color) -->
+    <path d="M212 356 V258 a44 44 0 0 1 44 -44 H768 a44 44 0 0 1 44 44 V356 Z" fill="#2563eb"/>
   </g>
-  <!-- faixa do cabeçalho do calendário -->
-  <path d="M 248 350 h 528 v -22 a 56 56 0 0 0 -56 -56 H 304 a 56 56 0 0 0 -56 56 z" fill="#1e40af"/>
-  <!-- argolas -->
-  <g fill="#1e40af">
-    <rect x="360" y="228" width="40" height="96" rx="20"/>
-    <rect x="624" y="228" width="40" height="96" rx="20"/>
+
+  <!-- binder rings -->
+  <g fill="#1e3a8a">
+    <rect x="380" y="176" width="40" height="96" rx="20"/>
+    <rect x="604" y="176" width="40" height="96" rx="20"/>
   </g>
-  <!-- check dentro do calendário -->
-  <path d="M 400 540 l 78 82 l 156 -168" fill="none" stroke="#2563eb" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- easter egg da marca -->
-  <text x="512" y="905" text-anchor="middle" font-family="Segoe Script, Brush Script MT, cursive" font-size="96" fill="#ffffff" opacity="0.92">Taylor</text>
+
+  <!-- day cells -->
+  <g fill="#dbe4f0">
+    <rect x="278" y="404" width="96" height="74" rx="12"/>
+    <rect x="402" y="404" width="96" height="74" rx="12"/>
+    <rect x="526" y="404" width="96" height="74" rx="12"/>
+    <rect x="278" y="642" width="96" height="74" rx="12"/>
+    <rect x="402" y="642" width="96" height="74" rx="12"/>
+    <rect x="526" y="642" width="96" height="74" rx="12"/>
+    <rect x="650" y="642" width="96" height="74" rx="12"/>
+  </g>
+
+  <!-- "today" cell highlighted with a check -->
+  <rect x="650" y="404" width="96" height="74" rx="12" fill="#2563eb"/>
+  <path d="M674 442 l16 16 l28 -30" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Easter egg: "Taylor" handwritten across the card -->
+  <text x="512" y="602" text-anchor="middle"
+        font-family="'Segoe Script','Brush Script MT','Comic Sans MS',cursive"
+        font-size="104" font-style="italic" font-weight="700"
+        fill="#2563eb">Taylor</text>
 </svg>
