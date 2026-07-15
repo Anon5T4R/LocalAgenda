@@ -177,8 +177,12 @@ export function SettingsModal() {
             <div className="field">
               <label className="inline" style={{ cursor: "pointer" }}>
                 <input type="checkbox" checked={autostart} onChange={(e) => toggleAutostart(e.target.checked)} style={{ width: "auto" }} />
-                Abrir com o sistema
+                Iniciar junto com o logon
               </label>
+              <div className="hint">
+                Abre em segundo plano (direto na bandeja) ao entrar no Windows, pra os alarmes e
+                lembretes funcionarem sem você precisar abrir o app.
+              </div>
             </div>
           )}
 

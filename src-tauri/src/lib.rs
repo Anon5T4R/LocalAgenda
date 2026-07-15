@@ -124,9 +124,12 @@ pub fn run() {
             }
             open_main(app);
         }))
+        // Autostart: quando ligado, o app entra no logon com "--hidden" pra abrir
+        // direto na bandeja (segundo plano), sem estourar a janela — os lembretes
+        // rodam sozinhos.
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
+            Some(vec!["--hidden"]),
         ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -186,6 +189,14 @@ pub fn run() {
                         // abaixo mata o llama-server).
                     }
                 });
+            }
+
+            // Início no logon com "--hidden": esconde a janela e fica só na
+            // bandeja (o app roda em segundo plano disparando os lembretes).
+            if std::env::args().any(|a| a == "--hidden") {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.hide();
+                }
             }
 
             // Tick de lembretes: a cada 30s, dispara o que venceu. Barato — só um
