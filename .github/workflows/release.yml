@@ -70,6 +70,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/fetch-llama.sh
 
+      - name: Cargo.lock em dia (--locked)
+        working-directory: src-tauri
+        run: cargo fetch --locked
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
