@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { dateKey } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import { expandAll } from "../lib/recur";
 import type { Calendar } from "../lib/types";
 import { useStore, visibleEvents } from "../state/store";
@@ -23,7 +24,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <button className="btn primary" onClick={() => openEvent({ start: "", end: "" })}>
-        ＋ Novo evento
+        {t("side.newEvent")}
       </button>
 
       <div className="side-section">
@@ -37,7 +38,7 @@ export function Sidebar() {
       </div>
 
       <div className="side-section">
-        <h4>Calendários</h4>
+        <h4>{t("side.calendars")}</h4>
         <div className="cal-list">
           {calendars.map((c) => (
             <CalRow key={c.id} cal={c} onToggle={() => toggleCalendar(c.id)} />
@@ -48,7 +49,7 @@ export function Sidebar() {
           style={{ marginTop: 6, width: "100%", justifyContent: "flex-start", color: "var(--text-dim)" }}
           onClick={() => useUi.getState().setSettings(true)}
         >
-          ＋ Gerenciar calendários
+          {t("side.manageCalendars")}
         </button>
       </div>
     </aside>

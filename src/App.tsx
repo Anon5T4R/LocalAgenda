@@ -14,6 +14,7 @@ import { TopBar } from "./components/TopBar";
 import { WeekView } from "./components/WeekView";
 import { getStartupFile, inTauri, notify, readFileBase64 } from "./lib/backend";
 import { addDays, startOfWeek } from "./lib/datetime";
+import { t } from "./lib/i18n";
 import { parseIcs } from "./lib/ics";
 import { armAudio, playChime, startAlarmSound } from "./lib/sound";
 import type { Reminder } from "./lib/types";
@@ -94,10 +95,10 @@ export default function App() {
     const iv = setInterval(() => {
       if (useClock.getState().fireTimer()) {
         const id = crypto.randomUUID();
-        useUi.getState().pushToast({ id, title: "⏲️ Timer", body: "Tempo esgotado!", kind: "timer" });
+        useUi.getState().pushToast({ id, title: t("app.timer.title"), body: t("app.timer.body"), kind: "timer" });
         const { soundEnabled, soundVolume } = useStore.getState().settings;
         if (soundEnabled) startAlarmSound(id, soundVolume);
-        if (inTauri()) void notify("⏲️ Timer", "Tempo esgotado!");
+        if (inTauri()) void notify(t("app.timer.title"), t("app.timer.body"));
       }
     }, 500);
     return () => clearInterval(iv);
@@ -115,8 +116,8 @@ export default function App() {
         if (parsed.length) {
           useUi.getState().pushToast({
             id: crypto.randomUUID(),
-            title: "Importado",
-            body: `${parsed.length} evento(s) do arquivo .ics`,
+            title: t("app.imported.title"),
+            body: t("app.imported.body", { n: parsed.length }),
             kind: "summary",
           });
           setView("agenda");
@@ -180,7 +181,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [go, goToday, setView]);
 
-  if (!loaded) return <div className="loading">Carregando…</div>;
+  if (!loaded) return <div className="loading">{t("app.loading")}</div>;
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor, settings.firstDayOfWeek), i));
 

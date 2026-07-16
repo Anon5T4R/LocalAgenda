@@ -4,6 +4,7 @@
 
 import { remindersDispatch, remindersReplace } from "./backend";
 import { addDays, dateKey, fmtTime, parseLocal, sameDay, startOfDay } from "./datetime";
+import { t as tr } from "./i18n";
 import { expandAll, expandEvent } from "./recur";
 import type { Alarm, AgendaEvent, Reminder, Settings, Task } from "./types";
 
@@ -11,23 +12,25 @@ const HORIZON_DAYS = 30;
 const GRACE_MS = 10 * 60 * 1000; // lembretes vencidos há < 10 min ainda disparam 1×
 
 function offsetText(min: number): string {
-  if (min <= 0) return "agora";
-  if (min % 1440 === 0) return `${min / 1440} dia(s) antes`;
-  if (min % 60 === 0) return `${min / 60} h antes`;
-  return `${min} min antes`;
+  if (min <= 0) return tr("notif.offset.now");
+  if (min % 1440 === 0) return tr("notif.offset.days", { n: min / 1440 });
+  if (min % 60 === 0) return tr("notif.offset.hours", { n: min / 60 });
+  return tr("notif.offset.min", { n: min });
 }
 
 function eventBody(start: Date, min: number, allDay: boolean): string {
-  const when = allDay ? "hoje (dia inteiro)" : `às ${fmtTime(start)}`;
-  return min <= 0 ? `Começa ${when}` : `Começa ${when} — lembrete ${offsetText(min)}`;
+  const when = allDay ? tr("notif.when.allDay") : tr("notif.when.at", { time: fmtTime(start) });
+  return min <= 0
+    ? tr("notif.body.starts", { when })
+    : tr("notif.body.startsRem", { when, off: offsetText(min) });
 }
 
 function summaryBody(events: number, tasks: number): string {
-  const e = `${events} evento${events === 1 ? "" : "s"}`;
-  const t = `${tasks} tarefa${tasks === 1 ? "" : "s"}`;
-  if (events && tasks) return `${e} e ${t} para hoje.`;
-  if (events) return `${e} para hoje.`;
-  return `${t} para hoje.`;
+  const e = tr("notif.count.events", { n: events });
+  const tk = tr("notif.count.tasks", { n: tasks });
+  if (events && tasks) return tr("notif.summary.both", { e, t: tk });
+  if (events) return tr("notif.summary.events", { e });
+  return tr("notif.summary.tasks", { t: tk });
 }
 
 /** Calcula todas as linhas de lembrete pra janela rolante. */
@@ -56,7 +59,7 @@ export function buildReminders(
           kind: "event",
           refId: ev.id,
           occ: o.occKey,
-          title: ev.title || "Evento",
+          title: ev.title || tr("notif.event.fallback"),
           body: eventBody(o.start, min, ev.allDay),
           fireAt: o.start.getTime() - min * 60_000,
           fired: false,
@@ -76,7 +79,7 @@ export function buildReminders(
         kind: "task",
         refId: t.id,
         occ: t.due,
-        title: `Tarefa: ${t.title}`,
+        title: tr("notif.task.title", { title: t.title }),
         body: eventBody(due, min, allDay),
         fireAt: due.getTime() - min * 60_000,
         fired: false,
@@ -98,8 +101,8 @@ export function buildReminders(
         kind: "alarm",
         refId: al.id,
         occ: dateKey(day),
-        title: al.label ? `⏰ ${al.label}` : "⏰ Alarme",
-        body: `Alarme das ${al.time}`,
+        title: al.label ? tr("notif.alarm.labeled", { label: al.label }) : tr("notif.alarm.plain"),
+        body: tr("notif.alarm.body", { time: al.time }),
         fireAt: at.getTime(),
         fired: false,
       });
@@ -122,7 +125,7 @@ export function buildReminders(
         kind: "summary",
         refId: "",
         occ: dateKey(day),
-        title: "Sua agenda de hoje",
+        title: tr("notif.summary.title"),
         body: summaryBody(evCount, taskCount),
         fireAt: at.getTime(),
         fired: false,

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { addDays, dateKey, fmtTimeCompact, isToday, monthGrid, startOfDay, toIso, weekdayName } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import { expandAll, type Occurrence } from "../lib/recur";
 import { calendarColorMap, useStore, visibleEvents } from "../state/store";
 import { useUi } from "../state/ui";
@@ -75,7 +76,7 @@ export function MonthView() {
                         setView("day");
                       }}
                     >
-                      +{extra} mais
+                      {t("month.more", { n: extra })}
                     </span>
                   )}
                 </div>
@@ -111,7 +112,7 @@ function Chip({
     return (
       <div className="chip allday" style={{ background: c }} onClick={open} title={occ.event.title}>
         {occ.event.rrule && <span className="rico">↻</span>}
-        {occ.event.title || "(sem título)"}
+        {occ.event.title || t("event.untitled")}
       </div>
     );
   }
@@ -119,7 +120,7 @@ function Chip({
     <div className="chip timed" onClick={open} title={occ.event.title}>
       <span className="cdot" style={{ background: c }} />
       <span className="ctime">{fmtTimeCompact(occ.start)}</span>
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{occ.event.title || "(sem título)"}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{occ.event.title || t("event.untitled")}</span>
     </div>
   );
 }

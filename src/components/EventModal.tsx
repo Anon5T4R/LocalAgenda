@@ -1,29 +1,33 @@
 import { useMemo, useState } from "react";
-import { nextSlot, parseLocal, toIso } from "../lib/datetime";
+import { nextSlot, parseLocal, toIso, weekdayShort } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import { buildRRuleString, describeRRule, EMPTY_RECUR, parseRRuleToUI, type Freq, type RecurUI } from "../lib/recur";
 import type { AgendaEvent } from "../lib/types";
 import { useStore } from "../state/store";
 import { useUi } from "../state/ui";
 
-const REMINDER_OPTIONS: [number, string][] = [
-  [0, "No horário"],
-  [5, "5 minutos antes"],
-  [10, "10 minutos antes"],
-  [30, "30 minutos antes"],
-  [60, "1 hora antes"],
-  [120, "2 horas antes"],
-  [1440, "1 dia antes"],
+// Resolvidos em tempo de render (reativos ao locale no remount).
+const reminderOptions = (): [number, string][] => [
+  [0, t("rem.atTime")],
+  [5, t("rem.min5")],
+  [10, t("rem.min10")],
+  [30, t("rem.min30")],
+  [60, t("rem.hour1")],
+  [120, t("rem.hour2")],
+  [1440, t("rem.day1")],
 ];
-const reminderLabel = (m: number) => REMINDER_OPTIONS.find(([v]) => v === m)?.[1] ?? `${m} min antes`;
+const reminderLabel = (m: number) => reminderOptions().find(([v]) => v === m)?.[1] ?? t("rem.fallback", { n: m });
 
-const FREQS: [Freq, string][] = [
-  ["", "Não repete"],
-  ["DAILY", "Diariamente"],
-  ["WEEKLY", "Semanalmente"],
-  ["MONTHLY", "Mensalmente"],
-  ["YEARLY", "Anualmente"],
+const freqOptions = (): [Freq, string][] => [
+  ["", t("freq.none")],
+  ["DAILY", t("freq.daily")],
+  ["WEEKLY", t("freq.weekly")],
+  ["MONTHLY", t("freq.monthly")],
+  ["YEARLY", t("freq.yearly")],
 ];
-const WD = ["D", "S", "T", "Q", "Q", "S", "S"];
+// Iniciais dos dias (dom…sáb) no idioma da UI, via Intl.
+const weekdayInitials = (): string[] =>
+  Array.from({ length: 7 }, (_, i) => weekdayShort(i).charAt(0).toUpperCase());
 
 function splitIso(iso: string, fallbackDate: string, fallbackTime: string) {
   if (!iso) return { date: fallbackDate, time: fallbackTime };
@@ -70,7 +74,7 @@ export function EventModal() {
     if (parseLocal(end).getTime() < parseLocal(start).getTime()) end = start;
     return {
       calendarId,
-      title: title.trim() || "(sem título)",
+      title: title.trim() || t("event.untitled"),
       description,
       location,
       start,
@@ -120,7 +124,7 @@ export function EventModal() {
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="modal">
         <div className="modal-head">
-          <h3>{isEdit ? "Editar evento" : "Novo evento"}</h3>
+          <h3>{isEdit ? t("em.editTitle") : t("em.newTitle")}</h3>
           <button className="icon-btn" onClick={close}>
             ✕
           </button>
@@ -128,7 +132,7 @@ export function EventModal() {
         <div className="modal-body">
           <input
             className="title-input"
-            placeholder="Título do evento"
+            placeholder={t("em.titlePlaceholder")}
             value={title}
             autoFocus
             onChange={(e) => setTitle(e.target.value)}
@@ -137,7 +141,7 @@ export function EventModal() {
           <div className="inline">
             <label className="inline" style={{ cursor: "pointer" }}>
               <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} style={{ width: "auto" }} />
-              Dia inteiro
+              {t("em.allDay")}
             </label>
             <div style={{ flex: 1 }} />
             <select value={calendarId} onChange={(e) => setCalendarId(e.target.value)} style={{ maxWidth: 160 }}>
@@ -150,14 +154,14 @@ export function EventModal() {
           </div>
 
           <div className="field">
-            <label>Início</label>
+            <label>{t("em.start")}</label>
             <div className="row">
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
               {!allDay && <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />}
             </div>
           </div>
           <div className="field">
-            <label>Fim</label>
+            <label>{t("em.end")}</label>
             <div className="row">
               <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               {!allDay && <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />}
@@ -166,15 +170,15 @@ export function EventModal() {
 
           {recurringScope && (
             <div className="recur-block">
-              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>Aplicar alterações a</label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>{t("em.applyTo")}</label>
               <div className="inline" style={{ gap: 16 }}>
                 <label className="inline" style={{ cursor: "pointer", gap: 6 }}>
                   <input type="radio" checked={scope === "this"} onChange={() => setScope("this")} style={{ width: "auto" }} />
-                  Somente esta ocorrência
+                  {t("em.scopeThis")}
                 </label>
                 <label className="inline" style={{ cursor: "pointer", gap: 6 }}>
                   <input type="radio" checked={scope === "series"} onChange={() => setScope("series")} style={{ width: "auto" }} />
-                  Toda a série
+                  {t("em.scopeSeries")}
                 </label>
               </div>
             </div>
@@ -183,9 +187,9 @@ export function EventModal() {
           <div className="recur-block" style={recurringScope && scope === "this" ? { opacity: 0.5, pointerEvents: "none" } : undefined}>
             <div className="row">
               <div className="field">
-                <label>Repetição</label>
+                <label>{t("em.repeat")}</label>
                 <select value={recur.freq} onChange={(e) => setRecur({ ...recur, freq: e.target.value as Freq })}>
-                  {FREQS.map(([v, l]) => (
+                  {freqOptions().map(([v, l]) => (
                     <option key={v} value={v}>
                       {l}
                     </option>
@@ -194,7 +198,7 @@ export function EventModal() {
               </div>
               {recur.freq && (
                 <div className="field">
-                  <label>A cada</label>
+                  <label>{t("em.interval")}</label>
                   <input
                     type="number"
                     min={1}
@@ -207,7 +211,7 @@ export function EventModal() {
 
             {recur.freq === "WEEKLY" && (
               <div className="wd-toggle">
-                {WD.map((d, i) => (
+                {weekdayInitials().map((d, i) => (
                   <button
                     key={i}
                     className={recur.byweekday.includes(i) ? "on" : ""}
@@ -229,19 +233,19 @@ export function EventModal() {
             {recur.freq && (
               <div className="row">
                 <div className="field">
-                  <label>Termina</label>
+                  <label>{t("em.ends")}</label>
                   <select
                     value={recur.endType}
                     onChange={(e) => setRecur({ ...recur, endType: e.target.value as RecurUI["endType"] })}
                   >
-                    <option value="never">Nunca</option>
-                    <option value="count">Após N vezes</option>
-                    <option value="until">Em uma data</option>
+                    <option value="never">{t("em.endNever")}</option>
+                    <option value="count">{t("em.endCount")}</option>
+                    <option value="until">{t("em.endUntil")}</option>
                   </select>
                 </div>
                 {recur.endType === "count" && (
                   <div className="field">
-                    <label>Vezes</label>
+                    <label>{t("em.times")}</label>
                     <input
                       type="number"
                       min={1}
@@ -252,7 +256,7 @@ export function EventModal() {
                 )}
                 {recur.endType === "until" && (
                   <div className="field">
-                    <label>Até</label>
+                    <label>{t("em.until")}</label>
                     <input type="date" value={recur.until} onChange={(e) => setRecur({ ...recur, until: e.target.value })} />
                   </div>
                 )}
@@ -262,7 +266,7 @@ export function EventModal() {
           </div>
 
           <div className="field">
-            <label>Lembretes</label>
+            <label>{t("em.reminders")}</label>
             <div className="chips-in">
               {reminders.map((m) => (
                 <span key={m} className="pill">
@@ -273,45 +277,45 @@ export function EventModal() {
             </div>
             <div className="inline" style={{ marginTop: 6 }}>
               <select value={remSel} onChange={(e) => setRemSel(e.target.value)} style={{ flex: 1 }}>
-                {REMINDER_OPTIONS.map(([v, l]) => (
+                {reminderOptions().map(([v, l]) => (
                   <option key={v} value={v}>
                     {l}
                   </option>
                 ))}
               </select>
               <button className="btn" onClick={addReminder}>
-                Adicionar
+                {t("em.addReminder")}
               </button>
             </div>
           </div>
 
           <div className="field">
-            <label>Local</label>
-            <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Opcional" />
+            <label>{t("em.location")}</label>
+            <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder={t("common.optional")} />
           </div>
           <div className="field">
-            <label>Descrição</label>
-            <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Opcional" />
+            <label>{t("em.description")}</label>
+            <textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("common.optional")} />
           </div>
         </div>
 
         <div className="modal-foot">
           {isEdit && (
             <button className="btn danger" onClick={del}>
-              Excluir
+              {t("common.delete")}
             </button>
           )}
           {isEdit && (
-            <button className="btn ghost" title="Criar uma cópia" onClick={duplicate}>
-              Duplicar
+            <button className="btn ghost" title={t("em.duplicateTitle")} onClick={duplicate}>
+              {t("common.duplicate")}
             </button>
           )}
           <div className="spacer" />
           <button className="btn" onClick={close}>
-            Cancelar
+            {t("common.cancel")}
           </button>
           <button className="btn primary" onClick={() => void save()}>
-            Salvar
+            {t("common.save")}
           </button>
         </div>
       </div>

@@ -1,25 +1,32 @@
 import { useState } from "react";
 import { toIso } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import { buildRRuleString, EMPTY_RECUR, parseRRuleToUI, type Freq } from "../lib/recur";
-import { PRIORITY_LABELS } from "../lib/types";
 import { useStore } from "../state/store";
 import { useUi } from "../state/ui";
 
-const REMINDER_OPTIONS: [number, string][] = [
-  [0, "No horário"],
-  [10, "10 minutos antes"],
-  [30, "30 minutos antes"],
-  [60, "1 hora antes"],
-  [1440, "1 dia antes"],
+// Resolvidos em tempo de render (reativos ao locale no remount).
+const reminderOptions = (): [number, string][] => [
+  [0, t("rem.atTime")],
+  [10, t("rem.min10")],
+  [30, t("rem.min30")],
+  [60, t("rem.hour1")],
+  [1440, t("rem.day1")],
 ];
-const reminderLabel = (m: number) => REMINDER_OPTIONS.find(([v]) => v === m)?.[1] ?? `${m} min antes`;
+const reminderLabel = (m: number) => reminderOptions().find(([v]) => v === m)?.[1] ?? t("rem.fallback", { n: m });
 
-const FREQS: [Freq, string][] = [
-  ["", "Não repete"],
-  ["DAILY", "Todo dia"],
-  ["WEEKLY", "Toda semana"],
-  ["MONTHLY", "Todo mês"],
-  ["YEARLY", "Todo ano"],
+const freqOptions = (): [Freq, string][] => [
+  ["", t("freq.none")],
+  ["DAILY", t("freqEvery.daily")],
+  ["WEEKLY", t("freqEvery.weekly")],
+  ["MONTHLY", t("freqEvery.monthly")],
+  ["YEARLY", t("freqEvery.yearly")],
+];
+const priorityOptions = (): [number, string][] => [
+  [0, t("prio.none")],
+  [1, t("prio.low")],
+  [2, t("prio.med")],
+  [3, t("prio.high")],
 ];
 
 export function TaskModal() {
@@ -45,7 +52,7 @@ export function TaskModal() {
     void saveTask({
       id: draft.id,
       parentId: draft.parentId ?? "",
-      title: title.trim() || "(sem título)",
+      title: title.trim() || t("event.untitled"),
       notes,
       due,
       priority,
@@ -62,7 +69,7 @@ export function TaskModal() {
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="modal">
         <div className="modal-head">
-          <h3>{isEdit ? "Editar tarefa" : "Nova tarefa"}</h3>
+          <h3>{isEdit ? t("tm.editTitle") : t("tm.newTitle")}</h3>
           <button className="icon-btn" onClick={close}>
             ✕
           </button>
@@ -70,18 +77,18 @@ export function TaskModal() {
         <div className="modal-body">
           <input
             className="title-input"
-            placeholder="O que precisa ser feito?"
+            placeholder={t("tm.titlePlaceholder")}
             value={title}
             autoFocus
             onChange={(e) => setTitle(e.target.value)}
           />
 
           <div className="field">
-            <label>Prioridade</label>
+            <label>{t("tm.priority")}</label>
             <select value={priority} onChange={(e) => setPriority(+e.target.value)}>
-              {PRIORITY_LABELS.map((l, i) => (
+              {priorityOptions().map(([i, l]) => (
                 <option key={i} value={i}>
-                  {i === 0 ? "Sem prioridade" : l}
+                  {l}
                 </option>
               ))}
             </select>
@@ -90,7 +97,7 @@ export function TaskModal() {
           <div className="field">
             <label className="inline" style={{ cursor: "pointer" }}>
               <input type="checkbox" checked={hasDue} onChange={(e) => setHasDue(e.target.checked)} style={{ width: "auto" }} />
-              Tem prazo
+              {t("tm.hasDue")}
             </label>
             {hasDue && (
               <div className="row" style={{ marginTop: 6 }}>
@@ -99,11 +106,11 @@ export function TaskModal() {
                   <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
                 ) : (
                   <button className="btn" onClick={() => setHasTime(true)}>
-                    ＋ horário
+                    {t("tm.addTime")}
                   </button>
                 )}
                 {hasTime && (
-                  <button className="icon-btn" title="Remover horário" onClick={() => setHasTime(false)}>
+                  <button className="icon-btn" title={t("tm.removeTime")} onClick={() => setHasTime(false)}>
                     ✕
                   </button>
                 )}
@@ -113,10 +120,10 @@ export function TaskModal() {
 
           {hasDue && (
             <div className="field">
-              <label>Repetição</label>
+              <label>{t("tm.repeat")}</label>
               <div className="row">
                 <select value={recur.freq} onChange={(e) => setRecur({ ...recur, freq: e.target.value as Freq })}>
-                  {FREQS.map(([v, l]) => (
+                  {freqOptions().map(([v, l]) => (
                     <option key={v} value={v}>
                       {l}
                     </option>
@@ -136,7 +143,7 @@ export function TaskModal() {
 
           {hasDue && (
             <div className="field">
-              <label>Lembretes</label>
+              <label>{t("tm.reminders")}</label>
               <div className="chips-in">
                 {reminders.map((m) => (
                   <span key={m} className="pill">
@@ -147,7 +154,7 @@ export function TaskModal() {
               </div>
               <div className="inline" style={{ marginTop: 6 }}>
                 <select value={remSel} onChange={(e) => setRemSel(e.target.value)} style={{ flex: 1 }}>
-                  {REMINDER_OPTIONS.map(([v, l]) => (
+                  {reminderOptions().map(([v, l]) => (
                     <option key={v} value={v}>
                       {l}
                     </option>
@@ -160,15 +167,15 @@ export function TaskModal() {
                     if (!reminders.includes(m)) setReminders([...reminders, m].sort((a, b) => a - b));
                   }}
                 >
-                  Adicionar
+                  {t("tm.addReminder")}
                 </button>
               </div>
             </div>
           )}
 
           <div className="field">
-            <label>Notas</label>
-            <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opcional" />
+            <label>{t("tm.notes")}</label>
+            <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t("common.optional")} />
           </div>
         </div>
 
@@ -176,7 +183,7 @@ export function TaskModal() {
           {isEdit && (
             <>
               <button className="btn ghost" onClick={() => draft.id && (useUi.getState().openTask({ parentId: draft.id, due: "" }))}>
-                ＋ Subtarefa
+                {t("tm.subtask")}
               </button>
               <button
                 className="btn danger"
@@ -185,16 +192,16 @@ export function TaskModal() {
                   close();
                 }}
               >
-                Excluir
+                {t("common.delete")}
               </button>
             </>
           )}
           <div className="spacer" />
           <button className="btn" onClick={close}>
-            Cancelar
+            {t("common.cancel")}
           </button>
           <button className="btn primary" onClick={save}>
-            Salvar
+            {t("common.save")}
           </button>
         </div>
       </div>

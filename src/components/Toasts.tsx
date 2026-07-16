@@ -1,12 +1,13 @@
 import { reminderSnooze } from "../lib/backend";
+import { t as tr } from "../lib/i18n";
 import { stopAlarmSound } from "../lib/sound";
 import { useUi } from "../state/ui";
 
-const SNOOZE: [number, string][] = [
-  [5, "5 min"],
-  [10, "10 min"],
-  [30, "30 min"],
-  [60, "1 h"],
+const snoozeOptions = (): [number, string][] => [
+  [5, tr("toast.snooze5")],
+  [10, tr("toast.snooze10")],
+  [30, tr("toast.snooze30")],
+  [60, tr("toast.snooze60")],
 ];
 
 export function Toasts() {
@@ -37,14 +38,14 @@ export function Toasts() {
             {ringing && (
               <div className="snooze">
                 <button className="stop-btn" onClick={() => close(t.id)}>
-                  ⏹ Parar
+                  {tr("toast.stop")}
                 </button>
               </div>
             )}
             {t.reminderId && (
               <div className="snooze">
-                <span className="hint" style={{ alignSelf: "center" }}>Adiar:</span>
-                {SNOOZE.map(([min, label]) => (
+                <span className="hint" style={{ alignSelf: "center" }}>{tr("toast.snooze")}</span>
+                {snoozeOptions().map(([min, label]) => (
                   <button
                     key={min}
                     onClick={async () => {

@@ -1,18 +1,25 @@
 import { useMemo, useState } from "react";
 import { fmtTime, monthShort, parseLocal, startOfDay } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import { PRIORITY_COLORS } from "../lib/types";
 import type { Task } from "../lib/types";
 import { useStore } from "../state/store";
 import { useUi } from "../state/ui";
 
 type Bucket = "overdue" | "today" | "soon" | "noDue" | "done";
-const BUCKET_LABEL: Record<Bucket, string> = {
-  overdue: "Atrasadas",
-  today: "Hoje",
-  soon: "Em breve",
-  noDue: "Sem prazo",
-  done: "Concluídas",
-};
+// Rótulo por bucket resolvido em tempo de render (reativo ao locale no remount).
+const bucketLabel = (b: Bucket): string =>
+  t(
+    (
+      {
+        overdue: "tasks.bucket.overdue",
+        today: "tasks.bucket.today",
+        soon: "tasks.bucket.soon",
+        noDue: "tasks.bucket.noDue",
+        done: "tasks.bucket.done",
+      } as const
+    )[b],
+  );
 const ORDER: Bucket[] = ["overdue", "today", "soon", "noDue", "done"];
 
 function bucketOf(t: Task): Bucket {
@@ -68,20 +75,20 @@ export function TasksPanel() {
   return (
     <div className="tasks">
       <div className="tasks-head">
-        <span>Tarefas</span>
-        <button className="icon-btn" title="Nova tarefa detalhada" onClick={() => openTask({ due: "" })}>
+        <span>{t("tasks.title")}</span>
+        <button className="icon-btn" title={t("tasks.newDetailed")} onClick={() => openTask({ due: "" })}>
           ＋
         </button>
       </div>
       <div className="tasks-add">
         <input
-          placeholder="Adicionar tarefa…"
+          placeholder={t("tasks.quickAdd")}
           value={quick}
           onChange={(e) => setQuick(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}
         />
         <button className="btn primary" onClick={add}>
-          Add
+          {t("common.add")}
         </button>
       </div>
       <div className="tasks-list">
@@ -89,7 +96,7 @@ export function TasksPanel() {
           grouped[b].length ? (
             <div key={b}>
               <div className="task-group-h">
-                {BUCKET_LABEL[b]} · {grouped[b].length}
+                {bucketLabel(b)} · {grouped[b].length}
               </div>
               {grouped[b].map((t) => (
                 <div key={t.id}>
@@ -102,7 +109,7 @@ export function TasksPanel() {
             </div>
           ) : null,
         )}
-        {!tasks.length && <div className="empty-hint">Nenhuma tarefa ainda.</div>}
+        {!tasks.length && <div className="empty-hint">{t("tasks.empty")}</div>}
       </div>
     </div>
   );

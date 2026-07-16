@@ -1,11 +1,13 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { autostartGet, autostartSet, dbExport, dbImport, inTauri, readFileBase64, writeTextFile } from "../lib/backend";
+import { t } from "../lib/i18n";
 import { exportIcs, parseIcs } from "../lib/ics";
 import { playChime } from "../lib/sound";
 import { CALENDAR_COLORS, type Calendar } from "../lib/types";
 import { useStore } from "../state/store";
 import { useUi } from "../state/ui";
+import { LocalePicker } from "./LocalePicker";
 
 function b64ToText(b64: string): string {
   const bin = atob(b64);
@@ -36,15 +38,15 @@ export function SettingsModal() {
   const importIcs = async () => {
     const path = await open({ filters: [{ name: "iCalendar", extensions: ["ics"] }] });
     if (typeof path !== "string") return;
-    setBusy("Importando…");
+    setBusy(t("set.busy.importing"));
     try {
       const text = b64ToText(await readFileBase64(path));
       const parsed = parseIcs(text);
       const calId = calendars[0]?.id ?? "";
       for (const p of parsed) await useStore.getState().saveEvent({ ...p, calendarId: calId });
-      setBusy(`${parsed.length} evento(s) importado(s).`);
+      setBusy(t("set.busy.imported", { n: parsed.length }));
     } catch (e) {
-      setBusy("Falha ao importar: " + (e as Error).message);
+      setBusy(t("set.busy.importFail", { e: (e as Error).message }));
     }
   };
 
@@ -52,30 +54,30 @@ export function SettingsModal() {
     const path = await save({ defaultPath: "agenda.ics", filters: [{ name: "iCalendar", extensions: ["ics"] }] });
     if (typeof path !== "string") return;
     await writeTextFile(path, exportIcs(events));
-    setBusy("Exportado.");
+    setBusy(t("set.busy.exported"));
   };
 
   const backupExport = async () => {
     const path = await save({ defaultPath: "localagenda-backup.db", filters: [{ name: "Backup", extensions: ["db"] }] });
     if (typeof path !== "string") return;
     await dbExport(path);
-    setBusy("Backup salvo.");
+    setBusy(t("set.busy.backupSaved"));
   };
 
   const backupImport = async () => {
     const path = await open({ filters: [{ name: "Backup", extensions: ["db"] }] });
     if (typeof path !== "string") return;
-    setBusy("Restaurando…");
+    setBusy(t("set.busy.restoring"));
     await dbImport(path);
     await load();
-    setBusy("Backup restaurado.");
+    setBusy(t("set.busy.restored"));
   };
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="modal wide">
         <div className="modal-head">
-          <h3>Configurações</h3>
+          <h3>{t("set.title")}</h3>
           <button className="icon-btn" onClick={close}>
             ✕
           </button>
@@ -83,28 +85,32 @@ export function SettingsModal() {
         <div className="modal-body">
           {/* Geral */}
           <div className="field">
-            <label>Tema</label>
+            <label>{t("set.theme")}</label>
             <select value={settings.theme} onChange={(e) => updateSettings({ theme: e.target.value as any })}>
-              <option value="system">Sistema</option>
-              <option value="light">Claro</option>
-              <option value="dark">Escuro</option>
+              <option value="system">{t("set.theme.system")}</option>
+              <option value="light">{t("set.theme.light")}</option>
+              <option value="dark">{t("set.theme.dark")}</option>
             </select>
+          </div>
+          <div className="field">
+            <label>{t("lang.title")}</label>
+            <LocalePicker />
           </div>
           <div className="row">
             <div className="field">
-              <label>Primeiro dia da semana</label>
+              <label>{t("set.firstDay")}</label>
               <select value={settings.firstDayOfWeek} onChange={(e) => updateSettings({ firstDayOfWeek: +e.target.value })}>
-                <option value={0}>Domingo</option>
-                <option value={1}>Segunda</option>
+                <option value={0}>{t("set.firstDay.sunday")}</option>
+                <option value={1}>{t("set.firstDay.monday")}</option>
               </select>
             </div>
             <div className="field">
-              <label>Duração padrão do evento</label>
+              <label>{t("set.defaultDuration")}</label>
               <select value={settings.defaultDurationMin} onChange={(e) => updateSettings({ defaultDurationMin: +e.target.value })}>
-                <option value={30}>30 minutos</option>
-                <option value={60}>1 hora</option>
-                <option value={90}>1h30</option>
-                <option value={120}>2 horas</option>
+                <option value={30}>{t("set.dur.30")}</option>
+                <option value={60}>{t("set.dur.60")}</option>
+                <option value={90}>{t("set.dur.90")}</option>
+                <option value={120}>{t("set.dur.120")}</option>
               </select>
             </div>
           </div>
@@ -118,11 +124,11 @@ export function SettingsModal() {
                 onChange={(e) => updateSettings({ dailySummary: e.target.checked })}
                 style={{ width: "auto" }}
               />
-              Resumo do dia por notificação
+              {t("set.dailySummary")}
             </label>
             {settings.dailySummary && (
               <div className="inline" style={{ marginTop: 6 }}>
-                <span className="hint">Às</span>
+                <span className="hint">{t("set.at")}</span>
                 <input
                   type="time"
                   value={settings.dailySummaryTime}
@@ -141,11 +147,11 @@ export function SettingsModal() {
                 onChange={(e) => updateSettings({ soundEnabled: e.target.checked })}
                 style={{ width: "auto" }}
               />
-              Som nas notificações e alarmes
+              {t("set.sound")}
             </label>
             {settings.soundEnabled && (
               <div className="inline" style={{ marginTop: 6, gap: 10 }}>
-                <span className="hint">Volume</span>
+                <span className="hint">{t("set.volume")}</span>
                 <input
                   type="range"
                   min={0}
@@ -155,7 +161,7 @@ export function SettingsModal() {
                   style={{ flex: 1 }}
                 />
                 <button className="btn ghost" onClick={() => playChime(settings.soundVolume)}>
-                  ▶ Testar
+                  {t("set.testSound")}
                 </button>
               </div>
             )}
@@ -170,25 +176,22 @@ export function SettingsModal() {
                 onChange={(e) => updateSettings({ closeToTray: e.target.checked })}
                 style={{ width: "auto" }}
               />
-              Fechar minimiza para a bandeja (o app segue disparando lembretes)
+              {t("set.closeToTray")}
             </label>
           </div>
           {inTauri() && (
             <div className="field">
               <label className="inline" style={{ cursor: "pointer" }}>
                 <input type="checkbox" checked={autostart} onChange={(e) => toggleAutostart(e.target.checked)} style={{ width: "auto" }} />
-                Iniciar junto com o logon
+                {t("set.autostart")}
               </label>
-              <div className="hint">
-                Abre em segundo plano (direto na bandeja) ao entrar no Windows, pra os alarmes e
-                lembretes funcionarem sem você precisar abrir o app.
-              </div>
+              <div className="hint">{t("set.autostartHint")}</div>
             </div>
           )}
 
           {/* Calendários */}
           <div className="field">
-            <label>Calendários</label>
+            <label>{t("set.calendars")}</label>
             <div className="cal-list">
               {calendars.map((c) => (
                 <CalEditRow key={c.id} cal={c} onSave={saveCalendar} onDelete={removeCalendar} canDelete={calendars.length > 1} />
@@ -197,28 +200,28 @@ export function SettingsModal() {
             <button
               className="btn ghost"
               style={{ marginTop: 6, justifyContent: "flex-start" }}
-              onClick={() => saveCalendar({ name: "Novo calendário", color: CALENDAR_COLORS[calendars.length % CALENDAR_COLORS.length] })}
+              onClick={() => saveCalendar({ name: t("set.newCalendar"), color: CALENDAR_COLORS[calendars.length % CALENDAR_COLORS.length] })}
             >
-              ＋ Adicionar calendário
+              {t("set.addCalendar")}
             </button>
           </div>
 
           {/* Dados */}
           {inTauri() && (
             <div className="field">
-              <label>Dados</label>
+              <label>{t("set.data")}</label>
               <div className="inline" style={{ flexWrap: "wrap", gap: 8 }}>
                 <button className="btn" onClick={importIcs}>
-                  ⬇ Importar .ics
+                  {t("set.importIcs")}
                 </button>
                 <button className="btn" onClick={exportIcsFile}>
-                  ⬆ Exportar .ics
+                  {t("set.exportIcs")}
                 </button>
                 <button className="btn" onClick={backupExport}>
-                  💾 Backup
+                  {t("set.backup")}
                 </button>
                 <button className="btn" onClick={backupImport}>
-                  ♻ Restaurar
+                  {t("set.restore")}
                 </button>
               </div>
               {busy && <div className="hint" style={{ marginTop: 6 }}>{busy}</div>}
@@ -226,9 +229,9 @@ export function SettingsModal() {
           )}
         </div>
         <div className="modal-foot">
-          <div className="hint" style={{ flex: 1 }}>LocalAgenda · suíte Local/Taylor · 100% offline</div>
+          <div className="hint" style={{ flex: 1 }}>{t("set.foot")}</div>
           <button className="btn primary" onClick={close}>
-            Fechar
+            {t("common.close")}
           </button>
         </div>
       </div>
@@ -259,7 +262,7 @@ function CalEditRow({
         style={{ flex: 1 }}
       />
       {canDelete && (
-        <button className="icon-btn" title="Excluir calendário" onClick={() => onDelete(cal.id)}>
+        <button className="icon-btn" title={t("set.deleteCalendar")} onClick={() => onDelete(cal.id)}>
           🗑
         </button>
       )}

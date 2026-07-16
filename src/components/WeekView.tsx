@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { addDays, dateKey, fmtTime, isToday, pad2, startOfDay, toIso, weekdayShort } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import { expandAll, type Occurrence } from "../lib/recur";
 import { calendarColorMap, useStore, visibleEvents } from "../state/store";
 import { useUi } from "../state/ui";
@@ -71,7 +72,7 @@ export function WeekView({ days }: Props) {
       </div>
 
       <div className="tg-allday" style={{ gridTemplateColumns: gridCols }}>
-        <div className="gutter">dia todo</div>
+        <div className="gutter">{t("week.allDayGutter")}</div>
         {days.map((d) => (
           <div key={d.getTime()} className="col">
             {(range.allday.get(dateKey(d)) ?? []).map((o, i) => (
@@ -82,7 +83,7 @@ export function WeekView({ days }: Props) {
                 onClick={() => openEvent({ ...o.event }, o.occKey)}
                 title={o.event.title}
               >
-                {o.event.title || "(sem título)"}
+                {o.event.title || t("event.untitled")}
               </div>
             ))}
           </div>
@@ -133,7 +134,7 @@ export function WeekView({ days }: Props) {
                 >
                   <div className="tt">
                     {p.occ.event.rrule ? "↻ " : ""}
-                    {p.occ.event.title || "(sem título)"}
+                    {p.occ.event.title || t("event.untitled")}
                   </div>
                   {p.height > 32 && (
                     <div className="th">

@@ -1,12 +1,13 @@
-import { addDays, monthName, monthShort, startOfWeek } from "../lib/datetime";
+import { addDays, fmtDateLong, fmtMonthYear, monthShort, startOfWeek } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import { useStore, type ViewKind } from "../state/store";
 import { useUi } from "../state/ui";
 
-const VIEWS: { key: ViewKind; label: string }[] = [
-  { key: "month", label: "Mês" },
-  { key: "week", label: "Semana" },
-  { key: "day", label: "Dia" },
-  { key: "agenda", label: "Agenda" },
+const VIEWS: { key: ViewKind; labelKey: "tb.view.month" | "tb.view.week" | "tb.view.day" | "tb.view.agenda" }[] = [
+  { key: "month", labelKey: "tb.view.month" },
+  { key: "week", labelKey: "tb.view.week" },
+  { key: "day", labelKey: "tb.view.day" },
+  { key: "agenda", labelKey: "tb.view.agenda" },
 ];
 
 export function TopBar() {
@@ -23,12 +24,12 @@ export function TopBar() {
 
       <div className="nav-group" style={{ marginLeft: 8 }}>
         <button className="btn" onClick={goToday}>
-          Hoje
+          {t("tb.today")}
         </button>
-        <button className="icon-btn" onClick={() => go(-1)} title="Anterior">
+        <button className="icon-btn" onClick={() => go(-1)} title={t("tb.prev")}>
           ‹
         </button>
-        <button className="icon-btn" onClick={() => go(1)} title="Próximo">
+        <button className="icon-btn" onClick={() => go(1)} title={t("tb.next")}>
           ›
         </button>
       </div>
@@ -40,7 +41,7 @@ export function TopBar() {
       <div className="search">
         <span className="mag">⌕</span>
         <input
-          placeholder="Buscar…"
+          placeholder={t("tb.search")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -49,18 +50,18 @@ export function TopBar() {
       <div className="seg">
         {VIEWS.map((v) => (
           <button key={v.key} className={view === v.key ? "active" : ""} onClick={() => setView(v.key)}>
-            {v.label}
+            {t(v.labelKey)}
           </button>
         ))}
       </div>
 
-      <button className="icon-btn" title="Relógio (alarmes, timer, cronômetro)" onClick={() => useUi.getState().setClock(true)}>
+      <button className="icon-btn" title={t("tb.clockTitle")} onClick={() => useUi.getState().setClock(true)}>
         ⏰
       </button>
-      <button className="icon-btn" title="IA" onClick={() => setAi(true)}>
+      <button className="icon-btn" title={t("tb.aiTitle")} onClick={() => setAi(true)}>
         ✨
       </button>
-      <button className="icon-btn" title="Configurações" onClick={() => setSettingsOpen(true)}>
+      <button className="icon-btn" title={t("tb.settingsTitle")} onClick={() => setSettingsOpen(true)}>
         ⚙
       </button>
     </header>
@@ -68,9 +69,8 @@ export function TopBar() {
 }
 
 function titleFor(view: ViewKind, cursor: Date, firstDay: number): string {
-  if (view === "month") return `${monthName(cursor.getMonth())} de ${cursor.getFullYear()}`;
-  if (view === "day")
-    return `${cursor.getDate()} de ${monthName(cursor.getMonth())} de ${cursor.getFullYear()}`;
+  if (view === "month") return fmtMonthYear(cursor);
+  if (view === "day") return fmtDateLong(cursor);
   if (view === "week" || view === "agenda") {
     const s = startOfWeek(cursor, firstDay);
     const e = addDays(s, 6);

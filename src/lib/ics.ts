@@ -4,6 +4,7 @@
 
 import type { AgendaEvent } from "./types";
 import { parseLocal, pad2, toIso } from "./datetime";
+import { t } from "./i18n";
 
 function esc(s: string): string {
   return (s || "")
@@ -126,7 +127,7 @@ export function parseIcs(text: string): Partial<AgendaEvent>[] {
     if (line === "END:VEVENT") {
       if (cur && cur.start) {
         if (!cur.end) cur.end = cur.start;
-        if (!cur.title) cur.title = "(sem título)";
+        if (!cur.title) cur.title = t("event.untitled");
         events.push(cur);
       }
       cur = null;

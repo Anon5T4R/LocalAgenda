@@ -3,6 +3,7 @@
 // devolve JSON/texto; quem cria o evento é o store, com validação em TS.
 
 import { fmtDayLong, fmtTime, parseLocal, toIso } from "./datetime";
+import { t } from "./i18n";
 import type { AgendaEvent } from "./types";
 
 interface ChatMsg {
@@ -23,7 +24,7 @@ async function chat(port: number, messages: ChatMsg[], maxTokens = 512): Promise
       chat_template_kwargs: { enable_thinking: false },
     }),
   });
-  if (!res.ok) throw new Error(`IA respondeu ${res.status}`);
+  if (!res.ok) throw new Error(t("ai.err.status", { status: res.status }));
   const data = await res.json();
   return data?.choices?.[0]?.message?.content ?? "";
 }
@@ -34,7 +35,7 @@ function extractJson(text: string): unknown {
   const raw = fenced ? fenced[1] : text;
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
-  if (start < 0 || end < 0) throw new Error("a IA não devolveu JSON");
+  if (start < 0 || end < 0) throw new Error(t("ai.err.noJson"));
   return JSON.parse(raw.slice(start, end + 1));
 }
 
@@ -56,18 +57,11 @@ export interface ParsedEvent {
 export async function parseEventNL(port: number, input: string): Promise<ParsedEvent> {
   const now = new Date();
   const nowIso = toIso(now, false);
-  const system = [
-    "Você converte um pedido em português num evento de agenda.",
-    `Agora são ${fmtDayLong(now)}, ${fmtTime(now)} (${nowIso}).`,
-    "Responda SOMENTE com um objeto JSON, sem texto ao redor, com as chaves:",
-    '{"title": string, "start": "YYYY-MM-DDTHH:MM", "end": "YYYY-MM-DDTHH:MM", "allDay": boolean, "location": string, "description": string, "rrule": string, "reminders": number[]}',
-    "- Use hora local de parede (sem fuso).",
-    "- Se não houver hora, allDay=true e start/end no formato YYYY-MM-DD.",
-    "- Se a duração não for dita, o evento dura 1 hora.",
-    "- reminders são minutos antes do início (ex.: 60 para 1h antes). [] se nenhum.",
-    '- rrule é uma RRULE RFC5545 sem DTSTART (ex.: "FREQ=WEEKLY;BYDAY=TH") ou "" se não repetir.',
-    "- Resolva dias da semana e expressões relativas para a próxima data futura.",
-  ].join("\n");
+  const system = t("ai.prompt.parseEvent", {
+    now: fmtDayLong(now),
+    time: fmtTime(now),
+    nowIso,
+  });
 
   const out = await chat(port, [
     { role: "system", content: system },
@@ -76,11 +70,11 @@ export async function parseEventNL(port: number, input: string): Promise<ParsedE
   const obj = extractJson(out) as Record<string, unknown>;
 
   const title = String(obj.title ?? "").trim();
-  if (!title) throw new Error("a IA não entendeu o título");
+  if (!title) throw new Error(t("ai.err.noTitle"));
   const allDay = obj.allDay === true;
   let start = String(obj.start ?? "").trim();
   let end = String(obj.end ?? "").trim();
-  if (isNaN(parseLocal(start).getTime())) throw new Error("data/hora de início inválida");
+  if (isNaN(parseLocal(start).getTime())) throw new Error(t("ai.err.badStart"));
   if (!end || isNaN(parseLocal(end).getTime())) {
     // Sem fim válido: 1h depois (ou o mesmo dia, se allDay).
     const s = parseLocal(start);
@@ -108,15 +102,12 @@ export async function parseEventNL(port: number, input: string): Promise<ParsedE
 
 /** Resumo em texto da agenda da semana a partir de uma lista já montada. */
 export async function weekSummary(port: number, agendaText: string): Promise<string> {
-  const system =
-    "Você é um assistente de agenda. Faça um resumo curto e útil (em português, 3-6 frases) " +
-    "da semana do usuário a partir da lista de compromissos e tarefas. Destaque dias cheios, " +
-    "conflitos de horário e prazos próximos. Não invente itens que não estão na lista.";
+  const system = t("ai.prompt.weekSummary");
   return chat(
     port,
     [
       { role: "system", content: system },
-      { role: "user", content: agendaText || "(semana sem compromissos)" },
+      { role: "user", content: agendaText || t("ai.summary.emptyWeek") },
     ],
     600,
   );

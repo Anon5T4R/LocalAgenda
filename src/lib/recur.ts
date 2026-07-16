@@ -7,7 +7,8 @@
 
 import { RRule } from "rrule";
 import type { AgendaEvent } from "./types";
-import { monthShort, parseLocal, toIso } from "./datetime";
+import { fmtDateShort, parseLocal, toIso, weekdayShort } from "./datetime";
+import { t, type MessageKey } from "./i18n";
 
 export interface Occurrence {
   event: AgendaEvent;
@@ -183,34 +184,42 @@ export function parseRRuleToUI(rrule: string): RecurUI {
   return ui;
 }
 
-const FREQ_WORD: Record<string, [string, string]> = {
-  DAILY: ["dia", "dias"],
-  WEEKLY: ["semana", "semanas"],
-  MONTHLY: ["mês", "meses"],
-  YEARLY: ["ano", "anos"],
+// Chaves de frase por frequência (frase COMPLETA por idioma — a concordância
+// varia demais pra concatenar palavra a palavra).
+const FREQ_EVERY: Record<string, MessageKey> = {
+  DAILY: "recur.every.daily",
+  WEEKLY: "recur.every.weekly",
+  MONTHLY: "recur.every.monthly",
+  YEARLY: "recur.every.yearly",
 };
-const WD_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const FREQ_EVERY_N: Record<string, MessageKey> = {
+  DAILY: "recur.everyN.daily",
+  WEEKLY: "recur.everyN.weekly",
+  MONTHLY: "recur.everyN.monthly",
+  YEARLY: "recur.everyN.yearly",
+};
 
-/** Texto humano em PT-BR da recorrência (mostra no editor e nos cards). */
+/** Texto humano da recorrência no idioma da UI (mostra no editor e nos cards). */
 export function describeRRule(rrule: string): string {
-  if (!rrule) return "Não repete";
+  if (!rrule) return t("recur.never");
   const ui = parseRRuleToUI(rrule);
-  if (!ui.freq) return "Não repete";
-  const [sing, plur] = FREQ_WORD[ui.freq] ?? ["", ""];
-  let base = ui.interval > 1 ? `A cada ${ui.interval} ${plur}` : `Todo ${sing}`;
+  if (!ui.freq) return t("recur.never");
+  let base =
+    ui.interval > 1
+      ? t(FREQ_EVERY_N[ui.freq], { n: ui.interval })
+      : t(FREQ_EVERY[ui.freq]);
   if (ui.freq === "WEEKLY" && ui.byweekday.length) {
     const days = ui.byweekday
       .slice()
       .sort((a, b) => a - b)
-      .map((d) => WD_PT[d])
+      .map((d) => weekdayShort(d))
       .join(", ");
-    base += ` (${days})`;
+    base += t("recur.days", { days });
   }
   if (ui.endType === "count") {
-    base += `, ${ui.count}×`;
+    base += t("recur.count", { n: ui.count });
   } else if (ui.endType === "until" && ui.until) {
-    const d = parseLocal(ui.until);
-    base += `, até ${d.getDate()} ${monthShort(d.getMonth())} ${d.getFullYear()}`;
+    base += t("recur.until", { date: fmtDateShort(parseLocal(ui.until)) });
   }
   return base;
 }

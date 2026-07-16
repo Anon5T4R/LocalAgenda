@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { parseEventNL, parsedToEvent, weekSummary } from "../lib/ai";
 import { inTauri } from "../lib/backend";
 import { addDays, fmtDayLabel, fmtTime, parseLocal, startOfWeek } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import { expandAll } from "../lib/recur";
 import { useAi } from "../state/airuntime";
 import { useStore, visibleEvents } from "../state/store";
@@ -32,7 +33,7 @@ export function AiPanel() {
 
   const createFromNL = async () => {
     if (!nl.trim() || !ai.port) return;
-    setWorking("Interpretando…");
+    setWorking(t("ai.working.parse"));
     setOut("");
     try {
       const parsed = await parseEventNL(ai.port, nl);
@@ -42,13 +43,13 @@ export function AiPanel() {
       close();
     } catch (e) {
       setWorking("");
-      setOut("Não consegui: " + (e as Error).message);
+      setOut(t("ai.err.parse", { e: (e as Error).message }));
     }
   };
 
   const summarize = async () => {
     if (!ai.port) return;
-    setWorking("Resumindo…");
+    setWorking(t("ai.working.summary"));
     setOut("");
     try {
       const from = startOfWeek(cursor, settings.firstDayOfWeek);
@@ -56,20 +57,20 @@ export function AiPanel() {
       const occ = expandAll(visibleEvents({ events, calendars, search: "" }), from, to);
       const lines: string[] = [];
       for (const o of occ) {
-        const when = o.event.allDay ? "dia todo" : `${fmtTime(o.start)}-${fmtTime(o.end)}`;
+        const when = o.event.allDay ? t("ai.line.allDay") : `${fmtTime(o.start)}-${fmtTime(o.end)}`;
         lines.push(`- ${fmtDayLabel(o.start)} ${when}: ${o.event.title}`);
       }
-      for (const t of tasks) {
-        if (t.doneAt || !t.due) continue;
-        const d = parseLocal(t.due);
-        if (d >= from && d < to) lines.push(`- Tarefa até ${fmtDayLabel(d)}: ${t.title}`);
+      for (const task of tasks) {
+        if (task.doneAt || !task.due) continue;
+        const d = parseLocal(task.due);
+        if (d >= from && d < to) lines.push("- " + t("ai.line.task", { date: fmtDayLabel(d), title: task.title }));
       }
       const text = await weekSummary(ai.port, lines.join("\n"));
       setWorking("");
-      setOut(text.trim() || "(sem resposta)");
+      setOut(text.trim() || t("ai.emptyReply"));
     } catch (e) {
       setWorking("");
-      setOut("Falha: " + (e as Error).message);
+      setOut(t("ai.err.summary", { e: (e as Error).message }));
     }
   };
 
@@ -79,32 +80,32 @@ export function AiPanel() {
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="modal">
         <div className="modal-head">
-          <h3>✨ Assistente</h3>
+          <h3>{t("ai.title")}</h3>
           <button className="icon-btn" onClick={close}>
             ✕
           </button>
         </div>
         <div className="modal-body">
           {!inTauri() ? (
-            <div className="hint">A IA local só funciona no app instalado.</div>
+            <div className="hint">{t("ai.devOnly")}</div>
           ) : (
             <>
               <div className="ai-status">
                 <span className={"dotpulse" + (running ? "" : " off")} />
-                {running ? `Modelo pronto (porta ${ai.port})` : "IA parada"}
+                {running ? t("ai.ready", { port: ai.port }) : t("ai.idle")}
                 {running && (
                   <button className="btn ghost" style={{ marginLeft: "auto" }} onClick={() => ai.stop()}>
-                    Parar
+                    {t("ai.stop")}
                   </button>
                 )}
               </div>
 
               {!running && (
                 <div className="field">
-                  <label>Modelo GGUF</label>
+                  <label>{t("ai.model")}</label>
                   {!settings.modelDir ? (
                     <button className="btn" onClick={chooseDir}>
-                      📁 Escolher pasta de modelos
+                      {t("ai.chooseFolder")}
                     </button>
                   ) : (
                     <>
@@ -113,11 +114,11 @@ export function AiPanel() {
                           {settings.modelDir}
                         </span>
                         <button className="btn ghost" onClick={chooseDir}>
-                          Trocar
+                          {t("ai.change")}
                         </button>
                       </div>
                       {ai.error && <div className="hint" style={{ color: "var(--danger)" }}>{ai.error}</div>}
-                      {ai.models.length === 0 && <div className="hint">Nenhum .gguf nesta pasta.</div>}
+                      {ai.models.length === 0 && <div className="hint">{t("ai.noGguf")}</div>}
                       <div className="chips-in" style={{ flexDirection: "column", alignItems: "stretch" }}>
                         {ai.models.map((m) => (
                           <div key={m.path} className="inline" style={{ justifyContent: "space-between", padding: "4px 0" }}>
@@ -125,7 +126,7 @@ export function AiPanel() {
                               {m.name} · {m.sizeGb.toFixed(1)} GB
                             </span>
                             <button className="btn" disabled={ai.starting} onClick={() => ai.start(m.path, settings.nGpuLayers)}>
-                              {ai.starting ? "Iniciando…" : "Usar"}
+                              {ai.starting ? t("ai.starting") : t("ai.use")}
                             </button>
                           </div>
                         ))}
@@ -138,22 +139,22 @@ export function AiPanel() {
               {running && (
                 <>
                   <div className="field">
-                    <label>Criar evento em linguagem natural</label>
+                    <label>{t("ai.nlLabel")}</label>
                     <textarea
                       rows={2}
-                      placeholder="ex.: dentista quinta 15h, lembrar 1h antes"
+                      placeholder={t("ai.nlPlaceholder")}
                       value={nl}
                       onChange={(e) => setNl(e.target.value)}
                     />
                     <button className="btn primary" style={{ marginTop: 6 }} onClick={createFromNL} disabled={!!working}>
-                      Interpretar e revisar
+                      {t("ai.nlRun")}
                     </button>
                   </div>
 
                   <div className="field">
-                    <label>Resumo da semana</label>
+                    <label>{t("ai.summaryLabel")}</label>
                     <button className="btn" onClick={summarize} disabled={!!working}>
-                      🗓️ Resumir minha semana
+                      {t("ai.summaryRun")}
                     </button>
                   </div>
                 </>

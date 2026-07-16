@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { fmtDayLong, pad2 } from "../lib/datetime";
+import { fmtDayLong, pad2, weekdayShort } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import type { Alarm } from "../lib/types";
 import { useClock } from "../state/clock";
 import { useStore } from "../state/store";
 import { useUi } from "../state/ui";
 
 type Tab = "alarms" | "timer" | "stopwatch";
-const WD = ["D", "S", "T", "Q", "Q", "S", "S"];
+// Iniciais dos dias (dom…sáb) no idioma da UI. Chamada em render → reativa.
+const weekdayInitials = (): string[] =>
+  Array.from({ length: 7 }, (_, i) => weekdayShort(i).charAt(0).toUpperCase());
 
 /** Re-render a cada `ms` — pro relógio/timer/cronômetro andarem. */
 function useTicker(ms: number) {
@@ -27,7 +30,7 @@ export function ClockModal() {
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="modal">
         <div className="modal-head">
-          <h3>⏰ Relógio</h3>
+          <h3>{t("clock.title")}</h3>
           <button className="icon-btn" onClick={close}>
             ✕
           </button>
@@ -43,13 +46,13 @@ export function ClockModal() {
 
           <div className="seg" style={{ alignSelf: "center" }}>
             <button className={tab === "alarms" ? "active" : ""} onClick={() => setTab("alarms")}>
-              Alarmes
+              {t("clock.tab.alarms")}
             </button>
             <button className={tab === "timer" ? "active" : ""} onClick={() => setTab("timer")}>
-              Timer
+              {t("clock.tab.timer")}
             </button>
             <button className={tab === "stopwatch" ? "active" : ""} onClick={() => setTab("stopwatch")}>
-              Cronômetro
+              {t("clock.tab.stopwatch")}
             </button>
           </div>
 
@@ -81,13 +84,13 @@ function AlarmsTab() {
     <div className="clock-panel">
       <div className="alarm-add">
         <input type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ width: 110 }} />
-        <input placeholder="Rótulo (opcional)" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: 1 }} />
+        <input placeholder={t("clock.alarm.labelPlaceholder")} value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: 1 }} />
         <button className="btn primary" onClick={add}>
-          Add
+          {t("common.add")}
         </button>
       </div>
       <div className="wd-toggle" style={{ justifyContent: "center" }}>
-        {WD.map((d, i) => (
+        {weekdayInitials().map((d, i) => (
           <button
             key={i}
             className={days.includes(i) ? "on" : ""}
@@ -97,10 +100,10 @@ function AlarmsTab() {
           </button>
         ))}
       </div>
-      <div className="hint" style={{ textAlign: "center" }}>Sem dias marcados = todo dia.</div>
+      <div className="hint" style={{ textAlign: "center" }}>{t("clock.alarm.noDaysHint")}</div>
 
       <div className="alarm-list">
-        {alarms.length === 0 && <div className="empty-hint" style={{ textAlign: "center" }}>Nenhum alarme.</div>}
+        {alarms.length === 0 && <div className="empty-hint" style={{ textAlign: "center" }}>{t("clock.alarm.none")}</div>}
         {alarms.map((a) => (
           <AlarmRow key={a.id} a={a} onToggle={toggleAlarm} onDelete={removeAlarm} />
         ))}
@@ -116,17 +119,19 @@ function AlarmRow({ a, onToggle, onDelete }: { a: Alarm; onToggle(id: string): v
       <div className="alarm-info">
         {a.label && <div className="alarm-label">{a.label}</div>}
         <div className="alarm-days">
-          {a.days.length ? a.days.slice().sort().map((d) => WD[d]).join(" ") : "Todo dia"}
+          {a.days.length
+            ? a.days.slice().sort().map((d) => weekdayInitials()[d]).join(" ")
+            : t("clock.alarm.everyDay")}
         </div>
       </div>
       <button
         className={"switch" + (a.enabled ? " on" : "")}
         onClick={() => onToggle(a.id)}
-        title={a.enabled ? "Desativar" : "Ativar"}
+        title={a.enabled ? t("clock.alarm.disable") : t("clock.alarm.enable")}
       >
         <span className="knob" />
       </button>
-      <button className="icon-btn" onClick={() => onDelete(a.id)} title="Excluir">
+      <button className="icon-btn" onClick={() => onDelete(a.id)} title={t("clock.alarm.delete")}>
         🗑
       </button>
     </div>
@@ -183,11 +188,11 @@ function TimerTab() {
           </div>
           <div className="inline" style={{ justifyContent: "center", gap: 6 }}>
             <input type="number" min={0} value={min} onChange={(e) => setMin(e.target.value)} style={{ width: 64 }} />
-            <span className="hint">min</span>
+            <span className="hint">{t("clock.timer.unitMin")}</span>
             <input type="number" min={0} max={59} value={sec} onChange={(e) => setSec(e.target.value)} style={{ width: 64 }} />
-            <span className="hint">seg</span>
+            <span className="hint">{t("clock.timer.unitSec")}</span>
             <button className="btn" onClick={applyCustom}>
-              Definir
+              {t("clock.timer.set")}
             </button>
           </div>
         </>
@@ -196,15 +201,15 @@ function TimerTab() {
       <div className="clock-controls">
         {clock.timerRunning ? (
           <button className="btn" onClick={() => clock.pauseTimer()}>
-            ⏸ Pausar
+            {t("clock.timer.pause")}
           </button>
         ) : (
           <button className="btn primary" onClick={() => clock.startTimer()} disabled={remaining === 0}>
-            ▶ Iniciar
+            {t("clock.timer.start")}
           </button>
         )}
         <button className="btn" onClick={() => clock.resetTimer()}>
-          ↺ Zerar
+          {t("clock.timer.reset")}
         </button>
       </div>
     </div>
@@ -235,19 +240,19 @@ function StopwatchTab() {
         {clock.swRunning ? (
           <>
             <button className="btn" onClick={() => clock.swPause()}>
-              ⏸ Pausar
+              {t("clock.sw.pause")}
             </button>
             <button className="btn" onClick={() => clock.swLap()}>
-              🚩 Volta
+              {t("clock.sw.lap")}
             </button>
           </>
         ) : (
           <>
             <button className="btn primary" onClick={() => clock.swStart()}>
-              ▶ {elapsed > 0 ? "Continuar" : "Iniciar"}
+              {elapsed > 0 ? t("clock.sw.resume") : t("clock.sw.start")}
             </button>
             <button className="btn" onClick={() => clock.swReset()} disabled={elapsed === 0 && clock.laps.length === 0}>
-              ↺ Zerar
+              {t("clock.sw.reset")}
             </button>
           </>
         )}
@@ -259,7 +264,7 @@ function StopwatchTab() {
             .reverse()
             .map(({ l, i }) => (
               <div key={i} className="lap-row">
-                <span className="lap-n">Volta {i + 1}</span>
+                <span className="lap-n">{t("clock.sw.lapN", { n: i + 1 })}</span>
                 <span className="mono">{fmtSW(l)}</span>
                 <span className="mono lap-split">
                   +{fmtSW(l - (i > 0 ? clock.laps[i - 1] : 0))}

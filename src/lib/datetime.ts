@@ -1,19 +1,35 @@
 // Hora de parede LOCAL, sem fuso (decisão do plano). Nunca use `new Date(iso)`
 // direto num "YYYY-MM-DD" (o JS interpreta como UTC e escorrega um dia); use
 // sempre `parseLocal`.
+//
+// Nomes de mês/dia e rótulos de data saem localizados via `Intl.DateTimeFormat`
+// na tag do locale atual (localeTag). Os formatadores são memoizados por
+// (locale, opções) e reavaliados quando o locale troca — NÃO capture o locale
+// numa const de módulo no import.
 
-const MONTHS = [
-  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
-  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
-];
-const MONTHS_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-const WEEKDAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-const WEEKDAYS_SHORT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+import { localeTag } from "./i18n";
 
-export const monthName = (m: number) => MONTHS[m];
-export const monthShort = (m: number) => MONTHS_SHORT[m];
-export const weekdayName = (d: number) => WEEKDAYS[d];
-export const weekdayShort = (d: number) => WEEKDAYS_SHORT[d];
+const _fmtCache = new Map<string, Intl.DateTimeFormat>();
+function dtf(opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const tag = localeTag();
+  const key = tag + "|" + JSON.stringify(opts);
+  let f = _fmtCache.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(tag, opts);
+    _fmtCache.set(key, f);
+  }
+  return f;
+}
+
+// Datas-âncora só pra extrair o nome pelo índice (mês / dia da semana).
+// 2021-01-01 é um mês-base qualquer; 2023-01-01 foi um DOMINGO (getDay()===0).
+const monthAnchor = (m: number) => new Date(2021, m, 1);
+const weekdayAnchor = (d: number) => new Date(2023, 0, 1 + d);
+
+export const monthName = (m: number) => dtf({ month: "long" }).format(monthAnchor(m));
+export const monthShort = (m: number) => dtf({ month: "short" }).format(monthAnchor(m));
+export const weekdayName = (d: number) => dtf({ weekday: "long" }).format(weekdayAnchor(d));
+export const weekdayShort = (d: number) => dtf({ weekday: "short" }).format(weekdayAnchor(d));
 
 export const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -82,14 +98,29 @@ export function fmtTimeCompact(date: Date): string {
 
 export const minutesBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 60_000);
 
-/** Rótulo do dia: "Ter, 15 jul". */
+/** Rótulo do dia: "ter., 15 de jul." / "Tue, Jul 15" / "mar, 15 jul". */
 export function fmtDayLabel(date: Date): string {
-  return `${weekdayShort(date.getDay())}, ${date.getDate()} ${monthShort(date.getMonth())}`;
+  return dtf({ weekday: "short", day: "numeric", month: "short" }).format(date);
 }
 
-/** Rótulo longo: "Terça, 15 de julho de 2026". */
+/** Rótulo longo: "quarta-feira, 15 de julho de 2026" / "Wednesday, July 15, 2026". */
 export function fmtDayLong(date: Date): string {
-  return `${weekdayName(date.getDay())}, ${date.getDate()} de ${monthName(date.getMonth())} de ${date.getFullYear()}`;
+  return dtf({ weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(date);
+}
+
+/** "julho de 2026" / "July 2026" / "julio de 2026" (cabeçalho de mês). */
+export function fmtMonthYear(date: Date): string {
+  return dtf({ month: "long", year: "numeric" }).format(date);
+}
+
+/** "15 de julho de 2026" / "July 15, 2026" (título do dia, sem dia da semana). */
+export function fmtDateLong(date: Date): string {
+  return dtf({ day: "numeric", month: "long", year: "numeric" }).format(date);
+}
+
+/** "15 de jul. de 2026" / "Jul 15, 2026" (data curta, ex.: fim da recorrência). */
+export function fmtDateShort(date: Date): string {
+  return dtf({ day: "numeric", month: "short", year: "numeric" }).format(date);
 }
 
 /** Agora, arredondado pra cima no próximo múltiplo de 30 min. */

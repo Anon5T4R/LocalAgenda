@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { addDays, dateKey, fmtTime, isToday, monthShort, startOfDay, weekdayName } from "../lib/datetime";
+import { t } from "../lib/i18n";
 import { expandAll, type Occurrence } from "../lib/recur";
 import { calendarColorMap, useStore, visibleEvents } from "../state/store";
 import { useUi } from "../state/ui";
@@ -28,9 +29,9 @@ export function AgendaView() {
     return (
       <div className="agenda">
         <div className="agenda-empty">
-          Nada nos próximos {SPAN_DAYS} dias.
+          {t("agenda.emptyLine1", { n: SPAN_DAYS })}
           <br />
-          Que tal um tempo livre? 🌤️
+          {t("agenda.emptyLine2")}
         </div>
       </div>
     );
@@ -53,9 +54,9 @@ export function AgendaView() {
                 <div key={o.event.id + i} className="agenda-item" onClick={() => openEvent({ ...o.event }, o.occKey)}>
                   <span className="cdot" style={{ background: colors[o.event.calendarId] ?? "#2563eb" }} />
                   <span className="atime">
-                    {o.event.allDay ? "Dia todo" : `${fmtTime(o.start)} – ${fmtTime(o.end)}`}
+                    {o.event.allDay ? t("event.allDay") : `${fmtTime(o.start)} – ${fmtTime(o.end)}`}
                   </span>
-                  <span className="atitle">{o.event.title || "(sem título)"}</span>
+                  <span className="atitle">{o.event.title || t("event.untitled")}</span>
                   {o.event.rrule && <span className="arico">↻</span>}
                   {o.event.location && <span className="arico">· {o.event.location}</span>}
                 </div>
