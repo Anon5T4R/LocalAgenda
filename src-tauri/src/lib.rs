@@ -53,16 +53,135 @@ fn write_text_file(path: String, content: String) -> Result<(), String> {
 }
 
 // --- autostart (abrir com o Windows pra os lembretes funcionarem sozinhos) ---
+//
+// A intenção do usuário mora no banco (`settings.autostart`), NÃO no registro do
+// Windows. O registro é só o efeito — e um efeito que se perde sozinho: o
+// `is_enabled()` do plugin só checa se a entrada em `...\CurrentVersion\Run`
+// EXISTE, nunca se ela aponta pro exe atual. Resultado: se a entrada some (um
+// instalador/limpador que a apague) ou envelhece (o caminho do exe muda e ela
+// segue apontando pro lugar antigo), o app parava de subir no logon enquanto a
+// checkbox continuava marcada — que é exatamente o sintoma relatado.
+//
+// Com a intenção no banco, `reconcile_autostart` (no setup) reimpõe o registro a
+// cada boot, então o estado se conserta sozinho.
 
-#[tauri::command(async)]
-fn autostart_get(app: tauri::AppHandle) -> bool {
-    app.autolaunch().is_enabled().unwrap_or(false)
+/// Estado desejado pelo usuário. `None` = nunca decidiu (instalação antiga):
+/// herda o que já está no SO pra não ligar/desligar nada por conta própria.
+fn autostart_intent(app: &tauri::AppHandle, db: &Db) -> bool {
+    db::setting_bool_opt(db, "autostart")
+        .unwrap_or_else(|| app.autolaunch().is_enabled().unwrap_or(false))
+}
+
+/// O que o SO tem hoje, do ponto de vista de "precisa consertar?".
+#[derive(Debug, PartialEq)]
+enum OsAutostart {
+    /// Entrada presente e apontando pro exe atual — nada a fazer.
+    Ok,
+    /// Ausente ou apontando pro caminho errado (instalação antiga/movida) —
+    /// é o caso a reimpor.
+    Broken,
+    /// O usuário desligou pelo Gerenciador de Tarefas do Windows. É uma escolha
+    /// explícita dele, na UI oficial do SO: obedecemos e desmarcamos a checkbox.
+    UserDisabled,
+}
+
+/// Espelha o formato que o `auto-launch` grava: `"<exe> <args>"`, sem aspas.
+#[cfg(windows)]
+fn os_autostart(app: &tauri::AppHandle) -> OsAutostart {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
+    use winreg::RegKey;
+
+    const RUN: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+    const APPROVED: &str =
+        r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
+    let name = &app.package_info().name;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+
+    // Override do Gerenciador de Tarefas: 12 bytes = flag (DWORD) + FILETIME de
+    // quando foi desligado. No flag, o bit 0 ligado = desabilitado (2/6 ligado,
+    // 3/7 desligado); quando habilitado, o timestamp fica zerado. Checamos os
+    // dois: o auto-launch só olha o timestamp, o que não enxerga um flag
+    // desligado com timestamp zerado.
+    let approved_off = hkcu
+        .open_subkey_with_flags(APPROVED, KEY_READ)
+        .ok()
+        .and_then(|k| k.get_raw_value(name).ok())
+        .map(|v| {
+            let b = &v.bytes;
+            let flag_off = b.first().map(|f| f & 1 != 0).unwrap_or(false);
+            let stamped_off = b.len() >= 12 && !b[4..12].iter().all(|x| *x == 0);
+            flag_off || stamped_off
+        })
+        .unwrap_or(false);
+    if approved_off {
+        return OsAutostart::UserDisabled;
+    }
+
+    let current = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let expected = format!("{current} --hidden");
+
+    match hkcu
+        .open_subkey_with_flags(RUN, KEY_READ)
+        .ok()
+        .and_then(|k| k.get_value::<String, _>(name).ok())
+    {
+        Some(v) if v.trim().eq_ignore_ascii_case(expected.trim()) => OsAutostart::Ok,
+        _ => OsAutostart::Broken,
+    }
+}
+
+/// Fora do Windows não há registro pra envelhecer: o `is_enabled()` basta.
+#[cfg(not(windows))]
+fn os_autostart(app: &tauri::AppHandle) -> OsAutostart {
+    if app.autolaunch().is_enabled().unwrap_or(false) {
+        OsAutostart::Ok
+    } else {
+        OsAutostart::Broken
+    }
+}
+
+/// Alinha o SO com a intenção guardada, a cada boot. É isso que conserta a
+/// entrada apagada por um instalador ou apontando pro caminho antigo — sem isso
+/// o app simplesmente parava de subir no logon, calado, com a checkbox marcada.
+fn reconcile_autostart(app: &tauri::AppHandle, db: &Db) {
+    let mut want = autostart_intent(app, db);
+    let state = os_autostart(app);
+
+    // O Gerenciador de Tarefas vence a checkbox: o usuário mandou desligar por
+    // lá, então a intenção passa a ser essa (senão reimporíamos todo boot,
+    // brigando com ele).
+    if want && state == OsAutostart::UserDisabled {
+        want = false;
+    }
+    let _ = db::set_setting_bool(db, "autostart", want);
+
+    let mgr = app.autolaunch();
+    let res = match (want, &state) {
+        (true, OsAutostart::Broken) => mgr.enable(),
+        (false, OsAutostart::Ok) => mgr.disable(),
+        _ => Ok(()),
+    };
+    if let Err(e) = res {
+        eprintln!("[localagenda] falha ao reconciliar o autostart (want={want}, so={state:?}): {e}");
+    }
 }
 
 #[tauri::command(async)]
-fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+fn autostart_get(app: tauri::AppHandle, db: State<'_, Db>) -> Result<bool, String> {
+    Ok(autostart_intent(&app, &db))
+}
+
+#[tauri::command(async)]
+fn autostart_set(app: tauri::AppHandle, db: State<'_, Db>, enabled: bool) -> Result<(), String> {
+    // A intenção primeiro: se o registro falhar, o reconcile do próximo boot
+    // ainda tenta de novo em vez de esquecer o que o usuário pediu.
+    db::set_setting_bool(&db, "autostart", enabled)?;
     let mgr = app.autolaunch();
     if enabled {
+        let _ = mgr.disable();
         mgr.enable().map_err(|e| e.to_string())
     } else {
         mgr.disable().map_err(|e| e.to_string())
@@ -122,7 +241,12 @@ pub fn run() {
             if let Some(file) = argv.iter().skip(1).find(|a| Path::new(a).is_file()) {
                 let _ = app.emit("open-file", file.clone());
             }
-            open_main(app);
+            // Um 2º launch com "--hidden" é o logon batendo num app que já está
+            // vivo: não estoura a janela na cara do usuário (só "abrir com" um
+            // arquivo ou um clique no atalho é que trazem a janela pra frente).
+            if !argv.iter().any(|a| a == "--hidden") {
+                open_main(app);
+            }
         }))
         // Autostart: quando ligado, o app entra no logon com "--hidden" pra abrir
         // direto na bandeja (segundo plano), sem estourar a janela — os lembretes
@@ -190,6 +314,13 @@ pub fn run() {
                     }
                 });
             }
+
+            // Reimpõe o autostart conforme a intenção guardada (conserta entrada
+            // apagada ou apontando pro caminho antigo). Fora da thread principal:
+            // mexe no registro e não deve segurar a abertura da janela.
+            let auto_handle = app.handle().clone();
+            let auto_db = db.clone();
+            std::thread::spawn(move || reconcile_autostart(&auto_handle, &auto_db));
 
             // Início no logon com "--hidden": esconde a janela e fica só na
             // bandeja (o app roda em segundo plano disparando os lembretes).

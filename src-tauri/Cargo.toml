@@ -1,6 +1,6 @@
 [package]
 name = "localagenda"
-version = "0.3.0"
+version = "0.3.1"
 description = "LocalAgenda — calendário, tarefas e lembretes 100% offline, com IA local"
 authors = ["Taylor"]
 edition = "2021"
@@ -34,3 +34,11 @@ tauri-plugin-single-instance = "2"
 # Autostart opcional (opt-in em Configurações): abrir com o Windows pra os
 # lembretes funcionarem sem o usuário abrir o app na mão.
 tauri-plugin-autostart = "2"
+
+[target.'cfg(windows)'.dependencies]
+# Lê a chave Run na mão pra decidir se o autostart precisa ser reimposto: o
+# `is_enabled()` do plugin só checa se a entrada existe, sem comparar o caminho
+# (então não enxerga uma entrada obsoleta), e não distingue "apagada" de
+# "desligada pelo Gerenciador de Tarefas" — que devem ter respostas opostas.
+# Mesma versão que o auto-launch já usa: não entra crate nova na árvore.
+winreg = "0.55"

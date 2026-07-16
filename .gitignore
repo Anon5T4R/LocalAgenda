@@ -26,6 +26,8 @@ dist-ssr
 
 # Tauri / Rust
 src-tauri/target
+# Gerado pelo tauri-build a cada compilação (padrão do resto da suíte).
+src-tauri/gen/schemas
 
 # Binários nativos de IA/runtime (baixados, não versionados).
 # Mantém o placeholder pra o glob de resources do Tauri nunca ficar vazio.

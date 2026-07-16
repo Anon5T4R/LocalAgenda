@@ -663,6 +663,48 @@ pub fn setting_bool(db: &Db, key: &str, default: bool) -> bool {
     .unwrap_or(default)
 }
 
+/// Lê um booleano das configurações sem padrão: `None` = a chave nunca foi
+/// gravada. O autostart usa isso pra distinguir "o usuário desligou" de "ainda
+/// não decidiu" (e, nesse caso, herdar o estado que já está no SO).
+pub fn setting_bool_opt(db: &Db, key: &str) -> Option<bool> {
+    with_conn(db, |conn| {
+        let raw: Option<String> = conn
+            .query_row("SELECT value FROM meta WHERE key='settings'", [], |r| r.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let v: serde_json::Value = raw
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        Ok(v.get(key).and_then(|b| b.as_bool()))
+    })
+    .unwrap_or(None)
+}
+
+/// Grava um booleano no blob de configurações preservando o resto (merge). O
+/// front reescreve o blob inteiro; daqui só mexemos numa chave.
+pub fn set_setting_bool(db: &Db, key: &str, value: bool) -> Result<(), String> {
+    with_conn(db, |conn| {
+        let raw: Option<String> = conn
+            .query_row("SELECT value FROM meta WHERE key='settings'", [], |r| r.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?;
+        let mut v: serde_json::Value = raw
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        if !v.is_object() {
+            v = serde_json::json!({});
+        }
+        v[key] = serde_json::Value::Bool(value);
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES('settings', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=?1",
+            params![v.to_string()],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
 #[tauri::command(async)]
 pub fn settings_set(db: State<'_, Db>, value: serde_json::Value) -> Result<(), String> {
     let raw = value.to_string();
