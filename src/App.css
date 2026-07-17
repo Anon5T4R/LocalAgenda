@@ -1,12 +1,27 @@
+/* Superfícies suavizadas (pass de 2026-07-17): o fundo não pode ser a coisa mais
+   forte da tela. Branco puro e quase-preto têm contraste máximo contra tudo e
+   roubam o foco do accent — daí `--surface` nunca ser #fff e o `--bg` escuro
+   subir ~5 L*. Só superfície muda; `--text*`/`--accent*` são identidade do tema. */
+
+/* Contraste do texto secundário (correção WCAG, 2026-07-17 — logo após a pass acima).
+   A ressalva "só superfície muda" do bloco anterior tem uma exceção: ao suavizar o
+   painel, o `--text-dim` passou a reprovar no AA (< 4.5:1) contra `--surface` nos temas
+   claros. Em nature e pastelpink ele JÁ reprovava antes, contra o branco puro —
+   dívida pré-existente que a pass só deixou visível. Escurecemos mexendo apenas no
+   L* (Lab), com a/b intactos: o matiz de cada tema fica igual, só a luminância cai
+   o mínimo pra bater 4.5:1. Temas escuros não foram tocados — já passavam.
+   `--text-faint` é decorativo (placeholder/apoio): não forçamos 4.5 nele, só o tiramos
+   do ilegível (< 3:1) — de propósito ele continua fraco. */
+
 :root {
-  --bg: #f7f8fa;
-  --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #e2e5ea;
-  --border-strong: #cfd4dc;
+  --bg: #edeef0;
+  --surface: #f8f9fb;
+  --surface-2: #e6e8eb;
+  --border: #d8dbe0;
+  --border-strong: #c5cad2;
   --text: #1c2430;
   --text-dim: #64707f;
-  --text-faint: #98a2b3;
+  --text-faint: #8791a2;
   --accent: #2563eb;
   --accent-soft: #e8f0fe;
   --danger: #dc2626;
@@ -18,11 +33,11 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #0f141b;
-  --surface: #171e28;
-  --surface-2: #1f2833;
-  --border: #2a3441;
-  --border-strong: #3a4655;
+  --bg: #191e25;
+  --surface: #212833;
+  --surface-2: #2a333e;
+  --border: #353f4d;
+  --border-strong: #465261;
   --text: #e6ebf2;
   --text-dim: #9aa7b6;
   --text-faint: #6b7787;
@@ -38,14 +53,14 @@
 /* --- Temas nomeados (paletas fixas; sobrepõem o accent do app). --- */
 
 :root[data-theme="nature"] {
-  --bg: #f5f7f2;
-  --surface: #ffffff;
-  --surface-2: #eef2ea;
-  --border: #e2e8dd;
-  --border-strong: #c7d3c2;
+  --bg: #eef1e9;
+  --surface: #f8faf5;
+  --surface-2: #e4eade;
+  --border: #dbe3d4;
+  --border-strong: #c0ceb9;
   --text: #2e3a2e;
-  --text-dim: #6f7d6f;
-  --text-faint: #9aa89a;
+  --text-dim: #697669;
+  --text-faint: #879487;
   --accent: #7a9e7e;
   --accent-soft: #e6efe1;
   --danger: #c0492f;
@@ -56,11 +71,11 @@
 }
 
 :root[data-theme="darkblue"] {
-  --bg: #0d1520;
-  --surface: #131f30;
-  --surface-2: #1a2942;
-  --border: #223049;
-  --border-strong: #334764;
+  --bg: #16202e;
+  --surface: #1d2a3c;
+  --surface-2: #26374e;
+  --border: #2d3f59;
+  --border-strong: #3e5674;
   --text: #e2e8f0;
   --text-dim: #8595ad;
   --text-faint: #5d6c85;
@@ -74,14 +89,14 @@
 }
 
 :root[data-theme="calmgreen"] {
-  --bg: #f2f5f1;
-  --surface: #ffffff;
-  --surface-2: #e9efe7;
-  --border: #dde6dc;
-  --border-strong: #c2d0c1;
+  --bg: #eaf0e9;
+  --surface: #f7faf6;
+  --surface-2: #dfe8dd;
+  --border: #d5e0d3;
+  --border-strong: #bacab8;
   --text: #24302a;
-  --text-dim: #6a7a6f;
-  --text-faint: #96a599;
+  --text-dim: #67776c;
+  --text-faint: #869489;
   --accent: #4f7d5e;
   --accent-soft: #dcebd9;
   --danger: #c0492f;
@@ -92,14 +107,14 @@
 }
 
 :root[data-theme="pastelpink"] {
-  --bg: #fdf4f7;
-  --surface: #ffffff;
-  --surface-2: #f9eaf0;
-  --border: #f2dfe7;
-  --border-strong: #e3c3d1;
+  --bg: #f8ebf0;
+  --surface: #fdf6f9;
+  --surface-2: #f2dde6;
+  --border: #ecd3de;
+  --border-strong: #ddb7c8;
   --text: #3a2a30;
-  --text-dim: #8a7580;
-  --text-faint: #b39aa5;
+  --text-dim: #806d77;
+  --text-faint: #a28994;
   --accent: #e8799f;
   --accent-soft: #fbe4ee;
   --danger: #d84a6b;
@@ -110,11 +125,11 @@
 }
 
 :root[data-theme="punkprincess"] {
-  --bg: #120a1a;
-  --surface: #1a0f26;
-  --surface-2: #241533;
-  --border: #2c1c3d;
-  --border-strong: #432a5c;
+  --bg: #1c1228;
+  --surface: #251733;
+  --surface-2: #32204a;
+  --border: #3a2850;
+  --border-strong: #51366f;
   --text: #f0e6ff;
   --text-dim: #9a86b5;
   --text-faint: #6d5b87;
