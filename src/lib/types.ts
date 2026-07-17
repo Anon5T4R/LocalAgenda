@@ -68,8 +68,13 @@ export interface Reminder {
   fired: boolean;
 }
 
+/** Temas nomeados (paletas fixas) além de claro/escuro/sistema. */
+export const NAMED_THEMES = ["nature", "darkblue", "calmgreen", "pastelpink", "punkprincess"] as const;
+
+export type Theme = "light" | "dark" | "system" | (typeof NAMED_THEMES)[number];
+
 export interface Settings {
-  theme: "light" | "dark" | "system";
+  theme: Theme;
   /** Fechar a janela minimiza pra bandeja em vez de encerrar. */
   closeToTray: boolean;
   /** Domingo=0 … Sábado=6. Padrão: domingo. */

@@ -35,6 +35,98 @@
   color-scheme: dark;
 }
 
+/* --- Temas nomeados (paletas fixas; sobrepõem o accent do app). --- */
+
+:root[data-theme="nature"] {
+  --bg: #f5f7f2;
+  --surface: #ffffff;
+  --surface-2: #eef2ea;
+  --border: #e2e8dd;
+  --border-strong: #c7d3c2;
+  --text: #2e3a2e;
+  --text-dim: #6f7d6f;
+  --text-faint: #9aa89a;
+  --accent: #7a9e7e;
+  --accent-soft: #e6efe1;
+  --danger: #c0492f;
+  --shadow: 0 10px 30px rgba(60, 70, 60, 0.14);
+  --shadow-sm: 0 1px 3px rgba(60, 70, 60, 0.1);
+  --today: #f0e8cc;
+  color-scheme: light;
+}
+
+:root[data-theme="darkblue"] {
+  --bg: #0d1520;
+  --surface: #131f30;
+  --surface-2: #1a2942;
+  --border: #223049;
+  --border-strong: #334764;
+  --text: #e2e8f0;
+  --text-dim: #8595ad;
+  --text-faint: #5d6c85;
+  --accent: #3b82f6;
+  --accent-soft: #1e3a5f;
+  --danger: #f87171;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --today: #33301e;
+  color-scheme: dark;
+}
+
+:root[data-theme="calmgreen"] {
+  --bg: #f2f5f1;
+  --surface: #ffffff;
+  --surface-2: #e9efe7;
+  --border: #dde6dc;
+  --border-strong: #c2d0c1;
+  --text: #24302a;
+  --text-dim: #6a7a6f;
+  --text-faint: #96a599;
+  --accent: #4f7d5e;
+  --accent-soft: #dcebd9;
+  --danger: #c0492f;
+  --shadow: 0 10px 30px rgba(60, 70, 60, 0.14);
+  --shadow-sm: 0 1px 3px rgba(60, 70, 60, 0.1);
+  --today: #eee7cd;
+  color-scheme: light;
+}
+
+:root[data-theme="pastelpink"] {
+  --bg: #fdf4f7;
+  --surface: #ffffff;
+  --surface-2: #f9eaf0;
+  --border: #f2dfe7;
+  --border-strong: #e3c3d1;
+  --text: #3a2a30;
+  --text-dim: #8a7580;
+  --text-faint: #b39aa5;
+  --accent: #e8799f;
+  --accent-soft: #fbe4ee;
+  --danger: #d84a6b;
+  --shadow: 0 10px 30px rgba(60, 70, 60, 0.14);
+  --shadow-sm: 0 1px 3px rgba(60, 70, 60, 0.1);
+  --today: #fbe9d2;
+  color-scheme: light;
+}
+
+:root[data-theme="punkprincess"] {
+  --bg: #120a1a;
+  --surface: #1a0f26;
+  --surface-2: #241533;
+  --border: #2c1c3d;
+  --border-strong: #432a5c;
+  --text: #f0e6ff;
+  --text-dim: #9a86b5;
+  --text-faint: #6d5b87;
+  --accent: #ff2d95;
+  --accent-soft: #33143a;
+  --danger: #ff5470;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --today: #3a2a18;
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
 }

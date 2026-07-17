@@ -38,12 +38,14 @@ export default function App() {
     void load();
   }, [load]);
 
-  // Tema (claro/escuro/sistema).
+  // Tema (claro/escuro/sistema + temas nomeados de paleta fixa).
   useEffect(() => {
     const apply = () => {
-      const dark =
-        settings.theme === "dark" ||
-        (settings.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      if (settings.theme !== "system") {
+        document.documentElement.dataset.theme = settings.theme;
+        return;
+      }
+      const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       document.documentElement.dataset.theme = dark ? "dark" : "light";
     };
     apply();

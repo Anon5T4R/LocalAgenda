@@ -1,10 +1,10 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
 import { autostartGet, autostartSet, dbExport, dbImport, inTauri, readFileBase64, writeTextFile } from "../lib/backend";
-import { t } from "../lib/i18n";
+import { t, type MessageKey } from "../lib/i18n";
 import { exportIcs, parseIcs } from "../lib/ics";
 import { playChime } from "../lib/sound";
-import { CALENDAR_COLORS, type Calendar } from "../lib/types";
+import { CALENDAR_COLORS, NAMED_THEMES, type Calendar, type Theme } from "../lib/types";
 import { useStore } from "../state/store";
 import { useUi } from "../state/ui";
 import { LocalePicker } from "./LocalePicker";
@@ -86,10 +86,15 @@ export function SettingsModal() {
           {/* Geral */}
           <div className="field">
             <label>{t("set.theme")}</label>
-            <select value={settings.theme} onChange={(e) => updateSettings({ theme: e.target.value as any })}>
+            <select value={settings.theme} onChange={(e) => updateSettings({ theme: e.target.value as Theme })}>
               <option value="system">{t("set.theme.system")}</option>
               <option value="light">{t("set.theme.light")}</option>
               <option value="dark">{t("set.theme.dark")}</option>
+              {NAMED_THEMES.map((th) => (
+                <option key={th} value={th}>
+                  {t(`set.theme.${th}` as MessageKey)}
+                </option>
+              ))}
             </select>
           </div>
           <div className="field">
