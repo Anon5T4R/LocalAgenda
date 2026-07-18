@@ -24,7 +24,8 @@ $ProgressPreference = "SilentlyContinue"
 # baixar os dois artefatos, rodar `sha256sum` e trocar as constantes aqui e no
 # `fetch-llama.sh`. Os dois têm que apontar pra MESMA tag.
 # ---------------------------------------------------------------------------
-$llTag = "b10066"
+# Tag do upstream (proveniencia; a URL usa o espelho da suite).
+$llUpstreamTag = "b10066"
 $llAsset = "llama-b10066-bin-win-vulkan-x64.zip"
 $llSha256 = "57cb5dd3143b2814b8d1d14587867628bfb126536abfa7085ca9560c4919d998"
 
@@ -37,7 +38,7 @@ if (Test-Path (Join-Path $llamaDir "llama-server.exe")) {
     exit 0
 }
 
-$url = "https://github.com/ggml-org/llama.cpp/releases/download/$llTag/$llAsset"
+$url = "https://github.com/Anon5T4R/Local-runtimes/releases/download/v1/$llAsset"
 Write-Host "Baixando $url ..."
 $zip = Join-Path $env:TEMP $llAsset
 Invoke-WebRequest -Uri $url -OutFile $zip
@@ -52,4 +53,4 @@ Write-Host "sha256 conferido: $got"
 
 Expand-Archive -Path $zip -DestinationPath $llamaDir -Force
 Remove-Item $zip -Force
-Write-Host "Instalado em $llamaDir ($llTag)"
+Write-Host "Instalado em $llamaDir ($llUpstreamTag)"

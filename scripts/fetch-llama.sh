@@ -17,7 +17,8 @@ set -euo pipefail
 #
 # PRA ATUALIZAR: trocar as constantes aqui E no .ps1, sempre na MESMA tag.
 # ---------------------------------------------------------------------------
-LL_TAG="b10066"
+# Tag do upstream (proveniencia; a URL usa o espelho da suite).
+LL_UPSTREAM_TAG="b10066"
 LL_ASSET="llama-b10066-bin-ubuntu-vulkan-x64.tar.gz"
 LL_SHA256="37831256be31aacf8ffe5bfc0a88040ef6f0224c220777b28fd77d4198a0b902"
 
@@ -30,7 +31,7 @@ if [ -f "$LLAMA_DIR/llama-server" ]; then
   exit 0
 fi
 
-URL="https://github.com/ggml-org/llama.cpp/releases/download/$LL_TAG/$LL_ASSET"
+URL="https://github.com/Anon5T4R/Local-runtimes/releases/download/v1/$LL_ASSET"
 echo "Baixando $URL ..."
 curl -fsSL --retry 3 --retry-delay 2 "$URL" -o /tmp/llama.tar.gz
 
@@ -54,4 +55,4 @@ SRV=$(find /tmp/llama-extract -type f -name 'llama-server' | head -1)
 cp -r "$(dirname "$SRV")"/* "$LLAMA_DIR"/
 chmod +x "$LLAMA_DIR/llama-server" || true
 rm -rf /tmp/llama.tar.gz /tmp/llama-extract
-echo "Instalado em $LLAMA_DIR ($LL_TAG)"
+echo "Instalado em $LLAMA_DIR ($LL_UPSTREAM_TAG)"
