@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fmtDayLong, pad2, weekdayShort } from "../lib/datetime";
 import { t } from "../lib/i18n";
+import { fmtTimer, hmsToSeconds, isValidTimer, TIMER_PRESETS_HOUR, TIMER_PRESETS_MIN } from "../lib/timer";
 import type { Alarm } from "../lib/types";
 import { useClock } from "../state/clock";
 import { useStore } from "../state/store";
@@ -139,31 +140,21 @@ function AlarmRow({ a, onToggle, onDelete }: { a: Alarm; onToggle(id: string): v
 }
 
 // ---------------- Timer ----------------
-
-const PRESETS: [number, string][] = [
-  [60, "1 min"],
-  [180, "3 min"],
-  [300, "5 min"],
-  [600, "10 min"],
-  [1500, "25 min"],
-];
-
-function fmtTimer(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`;
-}
+// Presets e matemática vêm de lib/timer.ts (testados sem GUI). Aqui só a UI:
+// duas linhas de presets (minutos / horas) pra não virar parede de botões, e um
+// custom em hh:mm:ss pra qualquer valor — inclusive várias horas.
 
 function TimerTab() {
   const clock = useClock();
   const remaining = clock.timerRemaining();
+  const [hrs, setHrs] = useState("0");
   const [min, setMin] = useState("5");
   const [sec, setSec] = useState("0");
 
   const applyCustom = () => {
-    const total = (parseInt(min, 10) || 0) * 60 + (parseInt(sec, 10) || 0);
-    if (total > 0) clock.setTimerTotal(total);
+    // hh:mm:ss → segundos totais (o modelo do app é sempre segundos, nunca min).
+    const total = hmsToSeconds(parseInt(hrs, 10) || 0, parseInt(min, 10) || 0, parseInt(sec, 10) || 0);
+    if (isValidTimer(total)) clock.setTimerTotal(total);
   };
 
   const progress = clock.timerTotal > 0 ? 1 - remaining / clock.timerTotal : 0;
@@ -179,17 +170,32 @@ function TimerTab() {
 
       {!clock.timerRunning && (
         <>
-          <div className="preset-row">
-            {PRESETS.map(([s, l]) => (
-              <button key={s} className="btn" onClick={() => clock.startTimer(s)}>
-                {l}
-              </button>
-            ))}
+          <div className="preset-group">
+            <span className="preset-label">{t("clock.timer.groupMin")}</span>
+            <div className="preset-row">
+              {TIMER_PRESETS_MIN.map((m) => (
+                <button key={`m${m}`} className="btn" onClick={() => clock.startTimer(m * 60)}>
+                  {m} {t("clock.timer.unitMin")}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="inline" style={{ justifyContent: "center", gap: 6 }}>
-            <input type="number" min={0} value={min} onChange={(e) => setMin(e.target.value)} style={{ width: 64 }} />
+          <div className="preset-group">
+            <span className="preset-label">{t("clock.timer.groupHour")}</span>
+            <div className="preset-row">
+              {TIMER_PRESETS_HOUR.map((h) => (
+                <button key={`h${h}`} className="btn" onClick={() => clock.startTimer(h * 3600)}>
+                  {h} {t("clock.timer.unitHour")}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="inline" style={{ justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
+            <input type="number" min={0} max={99} value={hrs} onChange={(e) => setHrs(e.target.value)} style={{ width: 56 }} />
+            <span className="hint">{t("clock.timer.unitHour")}</span>
+            <input type="number" min={0} max={59} value={min} onChange={(e) => setMin(e.target.value)} style={{ width: 56 }} />
             <span className="hint">{t("clock.timer.unitMin")}</span>
-            <input type="number" min={0} max={59} value={sec} onChange={(e) => setSec(e.target.value)} style={{ width: 64 }} />
+            <input type="number" min={0} max={59} value={sec} onChange={(e) => setSec(e.target.value)} style={{ width: 56 }} />
             <span className="hint">{t("clock.timer.unitSec")}</span>
             <button className="btn" onClick={applyCustom}>
               {t("clock.timer.set")}
