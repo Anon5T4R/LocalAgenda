@@ -46,6 +46,8 @@ function normalizeEvent(p: Partial<AgendaEvent>): AgendaEvent {
     allDay: p.allDay ?? false,
     rrule: p.rrule ?? "",
     exdates: p.exdates ?? [],
+    seriesId: p.seriesId ?? "",
+    recurrenceId: p.recurrenceId ?? "",
     reminders: p.reminders ?? [],
     createdAt: p.createdAt ?? 0,
     updatedAt: p.updatedAt ?? 0,
@@ -98,6 +100,8 @@ interface StoreState {
   saveEvent(e: Partial<AgendaEvent>): Promise<AgendaEvent | null>;
   removeEvent(id: string): Promise<void>;
   excludeOccurrence(ev: AgendaEvent, occKey: string): Promise<void>;
+  saveOccurrence(series: AgendaEvent, occKey: string, fields: Partial<AgendaEvent>): Promise<void>;
+  removeOccurrence(ev: AgendaEvent, occKey: string): Promise<void>;
 
   saveTask(t: Partial<Task>): Promise<void>;
   removeTask(id: string): Promise<void>;
@@ -192,14 +196,66 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   async removeEvent(id) {
+    // O Rust apaga em cascata (série + suas exceções); espelhamos aqui pra
+    // não deixar exceção órfã na memória até o próximo load.
     await eventDelete(id);
-    set({ events: get().events.filter((e) => e.id !== id) });
+    set({ events: get().events.filter((e) => e.id !== id && e.seriesId !== id) });
     void get().refreshReminders();
   },
 
+  /** Cancela uma ocorrência da série (EXDATE). Se ela era uma exceção, a
+   *  exceção morre junto — cancelada e substituída são estados exclusivos. */
   async excludeOccurrence(ev, occKey) {
-    if (ev.exdates.includes(occKey)) return;
-    await get().saveEvent({ ...ev, exdates: [...ev.exdates, occKey] });
+    const series = get().events.find((x) => x.id === (ev.seriesId || ev.id)) ?? ev;
+    const override = get().events.find(
+      (x) => x.seriesId === series.id && x.recurrenceId === occKey,
+    );
+    if (override) await get().removeEvent(override.id);
+    if (series.exdates.includes(occKey)) return;
+    await get().saveEvent({ ...series, exdates: [...series.exdates, occKey] });
+  },
+
+  /**
+   * Grava a edição de UMA ocorrência de série como exceção (RECURRENCE-ID).
+   * Cria na primeira vez e atualiza nas seguintes — reeditar a mesma terça não
+   * pode gerar uma segunda exceção pro mesmo `occKey`.
+   */
+  async saveOccurrence(series, occKey, fields) {
+    const existing = get().events.find(
+      (x) => x.seriesId === series.id && x.recurrenceId === occKey,
+    );
+    await get().saveEvent({
+      ...fields,
+      id: existing?.id ?? "",
+      createdAt: existing?.createdAt ?? 0,
+      // A exceção nunca carrega regra própria: quem repete é a série.
+      rrule: "",
+      exdates: [],
+      seriesId: series.id,
+      recurrenceId: occKey,
+    });
+    // Se a ocorrência estava cancelada, editá-la a traz de volta como exceção
+    // (senão a série continuaria calando e a exceção nova sumiria).
+    if (series.exdates.includes(occKey)) {
+      await get().saveEvent({ ...series, exdates: series.exdates.filter((d) => d !== occKey) });
+    }
+  },
+
+  /**
+   * Apaga UMA ocorrência, seja ela normal ou já excepcional. A exceção some e a
+   * origem entra em `exdates` — sem isso a série ressuscitaria a ocorrência no
+   * horário velho assim que a exceção saísse do índice.
+   */
+  async removeOccurrence(ev, occKey) {
+    if (ev.seriesId && ev.recurrenceId) {
+      const series = get().events.find((x) => x.id === ev.seriesId);
+      await get().removeEvent(ev.id);
+      if (series && !series.exdates.includes(ev.recurrenceId)) {
+        await get().saveEvent({ ...series, exdates: [...series.exdates, ev.recurrenceId] });
+      }
+      return;
+    }
+    await get().excludeOccurrence(ev, occKey);
   },
 
   async saveTask(t) {
@@ -290,7 +346,13 @@ export function calendarColorMap(calendars: Calendar[]): Record<string, string> 
   return m;
 }
 
-/** Eventos dos calendários visíveis, opcionalmente filtrados pela busca. */
+/**
+ * Eventos dos calendários visíveis, opcionalmente filtrados pela busca.
+ *
+ * Exceção de série herda a decisão da SÉRIE no calendário (ela é a mesma
+ * reunião, só deslocada) e casa a busca pelo texto dela OU pelo da série —
+ * quem procura o nome da série tem que achar também a terça que foi movida.
+ */
 export function visibleEvents(state: {
   events: AgendaEvent[];
   calendars: Calendar[];
@@ -298,13 +360,15 @@ export function visibleEvents(state: {
 }): AgendaEvent[] {
   const hidden = new Set(state.calendars.filter((c) => !c.visible).map((c) => c.id));
   const q = state.search.trim().toLowerCase();
+  const byId = new Map(state.events.map((e) => [e.id, e]));
+  const matches = (e: AgendaEvent) =>
+    e.title.toLowerCase().includes(q) ||
+    e.location.toLowerCase().includes(q) ||
+    e.description.toLowerCase().includes(q);
   return state.events.filter((e) => {
-    if (hidden.has(e.calendarId)) return false;
+    const owner = (e.seriesId && byId.get(e.seriesId)) || e;
+    if (hidden.has(owner.calendarId)) return false;
     if (!q) return true;
-    return (
-      e.title.toLowerCase().includes(q) ||
-      e.location.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q)
-    );
+    return matches(e) || (owner !== e && matches(owner));
   });
 }

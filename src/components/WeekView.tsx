@@ -33,7 +33,7 @@ export function WeekView({ days }: Props) {
   const range = useMemo(() => {
     const from = startOfDay(days[0]);
     const to = addDays(startOfDay(days[days.length - 1]), 1);
-    const occ = expandAll(visibleEvents({ events, calendars, search }), from, to);
+    const occ = expandAll(visibleEvents({ events, calendars, search }), from, to, events);
     const timed = new Map<string, Placed[]>();
     const allday = new Map<string, Occurrence[]>();
     for (const day of days) {

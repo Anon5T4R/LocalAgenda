@@ -48,9 +48,19 @@ export function exportIcs(events: AgendaEvent[]): string {
   ];
   const stamp = utcStampNow();
   for (const ev of events) {
+    const exception = !!ev.seriesId && !!ev.recurrenceId;
     lines.push("BEGIN:VEVENT");
-    lines.push(`UID:${ev.id}@localagenda`);
+    // Exceção compartilha o UID da série e se distingue pelo RECURRENCE-ID —
+    // é assim que o RFC 5545 amarra as duas; UID próprio viraria evento solto.
+    lines.push(`UID:${exception ? ev.seriesId : ev.id}@localagenda`);
     lines.push(`DTSTAMP:${stamp}`);
+    if (exception) {
+      lines.push(
+        ev.allDay
+          ? `RECURRENCE-ID;VALUE=DATE:${icsStamp(ev.recurrenceId, true)}`
+          : `RECURRENCE-ID:${icsStamp(ev.recurrenceId, false)}`,
+      );
+    }
     if (ev.allDay) {
       lines.push(`DTSTART;VALUE=DATE:${icsStamp(ev.start, true)}`);
       lines.push(`DTEND;VALUE=DATE:${icsStamp(ev.end, true)}`);
@@ -104,8 +114,15 @@ function propName(key: string): string {
   return key.split(";")[0].toUpperCase();
 }
 
+/**
+ * Evento vindo do .ics. `uid` sobrevive à parseada só pra religar as exceções à
+ * série depois que o chamador tiver atribuído os ids locais — no arquivo elas
+ * se conhecem por UID, aqui por `seriesId`.
+ */
+export type ParsedIcsEvent = Partial<AgendaEvent> & { uid?: string };
+
 /** Parseia um .ics em eventos (parciais — sem id/calendarId, o chamador define). */
-export function parseIcs(text: string): Partial<AgendaEvent>[] {
+export function parseIcs(text: string): ParsedIcsEvent[] {
   // Desdobra linhas continuadas (começam com espaço/tab).
   const rawLines = text.replace(/\r\n/g, "\n").split("\n");
   const lines: string[] = [];
@@ -117,8 +134,8 @@ export function parseIcs(text: string): Partial<AgendaEvent>[] {
     }
   }
 
-  const events: Partial<AgendaEvent>[] = [];
-  let cur: Partial<AgendaEvent> | null = null;
+  const events: ParsedIcsEvent[] = [];
+  let cur: ParsedIcsEvent | null = null;
   for (const line of lines) {
     if (line === "BEGIN:VEVENT") {
       cur = { exdates: [], reminders: [], allDay: false, description: "", location: "", rrule: "" };
@@ -161,6 +178,12 @@ export function parseIcs(text: string): Partial<AgendaEvent>[] {
       }
       case "RRULE":
         cur.rrule = val.trim();
+        break;
+      case "UID":
+        cur.uid = val.trim();
+        break;
+      case "RECURRENCE-ID":
+        cur.recurrenceId = parseIcsDate(val).iso;
         break;
       case "EXDATE": {
         const allDay = key.toUpperCase().includes("VALUE=DATE");

@@ -15,7 +15,7 @@ export function Sidebar() {
   const busy = useMemo(() => {
     const from = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
     const to = new Date(cursor.getFullYear(), cursor.getMonth() + 2, 1);
-    const occ = expandAll(visibleEvents({ events, calendars, search: "" }), from, to);
+    const occ = expandAll(visibleEvents({ events, calendars, search: "" }), from, to, events);
     const set = new Set<string>();
     for (const o of occ) set.add(dateKey(o.start));
     return set;

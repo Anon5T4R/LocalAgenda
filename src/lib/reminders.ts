@@ -5,7 +5,7 @@
 import { remindersDispatch, remindersReplace } from "./backend";
 import { addDays, dateKey, fmtTime, parseLocal, sameDay, startOfDay } from "./datetime";
 import { t as tr } from "./i18n";
-import { expandAll, expandEvent } from "./recur";
+import { expandAll, expandEvent, indexOverrides } from "./recur";
 import type { Alarm, AgendaEvent, Reminder, Settings, Task } from "./types";
 
 const HORIZON_DAYS = 30;
@@ -48,10 +48,13 @@ export function buildReminders(
     if (r.fireAt >= now - GRACE_MS && r.fireAt <= horizon.getTime()) items.push(r);
   };
 
-  // Eventos (inclui recorrentes).
+  // Eventos (inclui recorrentes). O índice de exceções é obrigatório aqui: sem
+  // ele a ocorrência movida notificaria duas vezes (no horário velho pela série
+  // e no novo pela exceção).
+  const overrides = indexOverrides(events);
   for (const ev of events) {
     if (!ev.reminders.length) continue;
-    const occs = expandEvent(ev, addDays(nowD, -1), horizon);
+    const occs = expandEvent(ev, addDays(nowD, -1), horizon, overrides.get(ev.id));
     for (const o of occs) {
       for (const min of ev.reminders) {
         push({

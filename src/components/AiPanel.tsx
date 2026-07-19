@@ -54,7 +54,7 @@ export function AiPanel() {
     try {
       const from = startOfWeek(cursor, settings.firstDayOfWeek);
       const to = addDays(from, 7);
-      const occ = expandAll(visibleEvents({ events, calendars, search: "" }), from, to);
+      const occ = expandAll(visibleEvents({ events, calendars, search: "" }), from, to, events);
       const lines: string[] = [];
       for (const o of occ) {
         const when = o.event.allDay ? t("ai.line.allDay") : `${fmtTime(o.start)}-${fmtTime(o.end)}`;

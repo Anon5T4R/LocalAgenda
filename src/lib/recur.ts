@@ -16,6 +16,8 @@ export interface Occurrence {
   end: Date;
   /** ISO do início desta ocorrência — casa com `event.exdates`. */
   occKey: string;
+  /** Esta ocorrência é uma exceção que substitui uma da série (`event.seriesId`). */
+  isException: boolean;
 }
 
 function toUtcMirror(local: Date): Date {
@@ -49,18 +51,60 @@ function mk(event: AgendaEvent, start: Date, durMs: number): Occurrence {
     event,
     start,
     end: new Date(start.getTime() + durMs),
-    occKey: toIso(start, event.allDay),
+    // A exceção se identifica pela ocorrência que ela substitui, não pelo
+    // horário pra onde foi movida — senão dois cliques na mesma exceção
+    // gerariam chaves diferentes depois de arrastá-la.
+    occKey: isException(event) ? event.recurrenceId : toIso(start, event.allDay),
+    isException: isException(event),
   };
 }
 
-/** Todas as ocorrências de um evento que tocam [rangeStart, rangeEnd). */
-export function expandEvent(ev: AgendaEvent, rangeStart: Date, rangeEnd: Date): Occurrence[] {
+/** Evento que substitui uma ocorrência de série (RECURRENCE-ID preenchido). */
+export function isException(ev: AgendaEvent): boolean {
+  return !!ev.seriesId && !!ev.recurrenceId;
+}
+
+/**
+ * Índice seriesId → chaves das ocorrências já substituídas por uma exceção.
+ *
+ * É ele que garante o "exatamente uma vez": a série pula a ocorrência
+ * substituída (esteja a exceção onde estiver no calendário) e a exceção se
+ * desenha sozinha como evento único. Como a supressão vem do índice e não de um
+ * EXDATE gravado junto, não existe janela em que uma escrita valeu e a outra
+ * não — o par nunca fica inconsistente no banco.
+ */
+export function indexOverrides(events: AgendaEvent[]): Map<string, Set<string>> {
+  const m = new Map<string, Set<string>>();
+  for (const ev of events) {
+    if (!isException(ev)) continue;
+    let set = m.get(ev.seriesId);
+    if (!set) m.set(ev.seriesId, (set = new Set()));
+    set.add(ev.recurrenceId);
+  }
+  return m;
+}
+
+/**
+ * Todas as ocorrências de um evento que tocam [rangeStart, rangeEnd).
+ *
+ * `overridden` = chaves desta série que já têm exceção (de `indexOverrides`).
+ * Quem expande UM evento solto precisa passar isso, ou a ocorrência movida
+ * aparece duas vezes; `expandAll` monta o índice sozinho.
+ */
+export function expandEvent(
+  ev: AgendaEvent,
+  rangeStart: Date,
+  rangeEnd: Date,
+  overridden?: ReadonlySet<string>,
+): Occurrence[] {
   const start0 = parseLocal(ev.start);
   const end0 = parseLocal(ev.end);
   if (isNaN(start0.getTime())) return [];
   const durMs = Math.max(0, end0.getTime() - start0.getTime());
 
-  if (!ev.rrule) {
+  // Exceção e evento simples caem no mesmo caminho: ocorrem uma vez, no
+  // horário que está gravado neles.
+  if (!ev.rrule || isException(ev)) {
     if (end0 > rangeStart && start0 < rangeEnd) return [mk(ev, start0, durMs)];
     return [];
   }
@@ -85,18 +129,36 @@ export function expandEvent(ev: AgendaEvent, rangeStart: Date, rangeEnd: Date): 
   for (const u of dates) {
     const s = fromUtcMirror(u);
     const occKey = toIso(s, ev.allDay);
+    // Cancelada (EXDATE) ou substituída por exceção: a série cala nos dois casos.
     if (exset.has(occKey)) continue;
+    if (overridden?.has(occKey)) continue;
     const e = new Date(s.getTime() + durMs);
     if (e <= rangeStart || s >= rangeEnd) continue;
-    out.push({ event: ev, start: s, end: e, occKey });
+    out.push({ event: ev, start: s, end: e, occKey, isException: false });
   }
   return out;
 }
 
-/** Expande vários eventos numa janela e ordena por início. */
-export function expandAll(events: AgendaEvent[], rangeStart: Date, rangeEnd: Date): Occurrence[] {
+/**
+ * Expande vários eventos numa janela e ordena por início. É o ponto único por
+ * onde todas as views passam, então a regra "exceção ganha da série" vale em
+ * todas de graça.
+ *
+ * `indexFrom` existe por causa de filtro (busca/calendário oculto): a supressão
+ * tem que ser calculada sobre TODOS os eventos, não sobre a lista já filtrada.
+ * Senão uma exceção renomeada que não casa com a busca some do índice e a série
+ * ressuscita a ocorrência no horário VELHO — a reunião movida reaparecendo onde
+ * não está mais. Padrão = `events` (quem não filtra não precisa pensar nisso).
+ */
+export function expandAll(
+  events: AgendaEvent[],
+  rangeStart: Date,
+  rangeEnd: Date,
+  indexFrom: AgendaEvent[] = events,
+): Occurrence[] {
+  const overrides = indexOverrides(indexFrom);
   const out: Occurrence[] = [];
-  for (const ev of events) out.push(...expandEvent(ev, rangeStart, rangeEnd));
+  for (const ev of events) out.push(...expandEvent(ev, rangeStart, rangeEnd, overrides.get(ev.id)));
   out.sort((a, b) => a.start.getTime() - b.start.getTime());
   return out;
 }

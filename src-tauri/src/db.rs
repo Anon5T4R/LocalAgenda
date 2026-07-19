@@ -23,7 +23,8 @@ use tauri::{Manager, State};
 #[derive(Clone, Default)]
 pub struct Db(pub Arc<Mutex<Option<Connection>>>);
 
-const SCHEMA_VERSION: i64 = 1;
+/// v1 → v2: `series_id`/`recurrence_id` em `events` (exceções de recorrência).
+const SCHEMA_VERSION: i64 = 2;
 
 pub fn now_ms() -> i64 {
     SystemTime::now()
@@ -81,9 +82,17 @@ pub struct Event {
     /// RRULE RFC 5545 (sem DTSTART); "" = evento único.
     #[serde(default)]
     pub rrule: String,
-    /// Ocorrências excluídas (início ISO de cada uma) — "só esta ocorrência".
+    /// Ocorrências CANCELADAS da série (EXDATE): início ISO de cada uma.
     #[serde(default)]
     pub exdates: Vec<String>,
+    /// Exceção de série: id da série que este evento substitui ("" = não é).
+    #[serde(default)]
+    pub series_id: String,
+    /// Chave da ocorrência ORIGINAL substituída (RECURRENCE-ID do iCal).
+    /// Guardar a origem — e não o horário novo — é o que deixa a série saber
+    /// qual ocorrência calar depois que a exceção foi movida de dia.
+    #[serde(default)]
+    pub recurrence_id: String,
     /// Lembretes: minutos antes do início.
     #[serde(default)]
     pub reminders: Vec<i64>,
@@ -173,6 +182,40 @@ fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("agenda.db"))
 }
 
+/// `true` se a coluna já existe (o `CREATE TABLE IF NOT EXISTS` é no-op numa
+/// base antiga, então quem decide se falta coluna é o PRAGMA — não a versão).
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({})", table))
+        .map_err(|e| e.to_string())?;
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+    while let Some(r) = rows.next().map_err(|e| e.to_string())? {
+        let name: String = r.get(1).map_err(|e| e.to_string())?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Migração incremental a partir da versão gravada. Só ADD COLUMN com DEFAULT:
+/// nenhum evento existente é reescrito, e como o padrão é "" todos continuam
+/// sendo série/evento simples — o comportamento de quem já tem base é idêntico.
+fn migrate(conn: &Connection, from: i64) -> Result<(), String> {
+    if from < 2 {
+        for col in ["series_id", "recurrence_id"] {
+            if !has_column(conn, "events", col)? {
+                conn.execute(
+                    &format!("ALTER TABLE events ADD COLUMN {} TEXT NOT NULL DEFAULT ''", col),
+                    [],
+                )
+                .map_err(|e| format!("falha ao migrar events.{}: {}", col, e))?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn init_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         r#"
@@ -201,6 +244,8 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
             all_day INTEGER NOT NULL DEFAULT 0,
             rrule TEXT NOT NULL DEFAULT '',
             exdates TEXT NOT NULL DEFAULT '[]',
+            series_id TEXT NOT NULL DEFAULT '',
+            recurrence_id TEXT NOT NULL DEFAULT '',
             reminders TEXT NOT NULL DEFAULT '[]',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
@@ -248,13 +293,33 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         .query_row("SELECT value FROM meta WHERE key='schema_version'", [], |r| r.get(0))
         .optional()
         .map_err(|e| e.to_string())?;
-    if ver.is_none() {
-        conn.execute(
-            "INSERT INTO meta(key, value) VALUES('schema_version', ?1)",
-            params![SCHEMA_VERSION.to_string()],
-        )
-        .map_err(|e| e.to_string())?;
+    match ver.as_deref().and_then(|v| v.parse::<i64>().ok()) {
+        // Base nova: o CREATE acima já nasceu na versão corrente.
+        None => {
+            conn.execute(
+                "INSERT INTO meta(key, value) VALUES('schema_version', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value=?1",
+                params![SCHEMA_VERSION.to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Some(v) if v < SCHEMA_VERSION => {
+            migrate(conn, v)?;
+            conn.execute(
+                "UPDATE meta SET value=?1 WHERE key='schema_version'",
+                params![SCHEMA_VERSION.to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        _ => {}
     }
+
+    // Índices de colunas NOVAS só depois da migração: numa base v1 a tabela já
+    // existe sem a coluna (o CREATE IF NOT EXISTS acima não a acrescenta), e um
+    // CREATE INDEX antes do ALTER faz o init inteiro falhar — o app não abriria
+    // o banco de quem só atualizou de versão.
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_events_series ON events(series_id);")
+        .map_err(|e| format!("falha ao criar índice de série: {}", e))?;
     let cal_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM calendars", [], |r| r.get(0))
         .map_err(|e| e.to_string())?;
@@ -353,7 +418,7 @@ pub fn calendar_delete(db: State<'_, Db>, id: String) -> Result<(), String> {
 
 fn row_to_event(r: &rusqlite::Row) -> rusqlite::Result<Event> {
     let exdates: String = r.get(9)?;
-    let reminders: String = r.get(10)?;
+    let reminders: String = r.get(12)?;
     Ok(Event {
         id: r.get(0)?,
         calendar_id: r.get(1)?,
@@ -365,13 +430,15 @@ fn row_to_event(r: &rusqlite::Row) -> rusqlite::Result<Event> {
         all_day: r.get::<_, i64>(7)? != 0,
         rrule: r.get(8)?,
         exdates: serde_json::from_str(&exdates).unwrap_or_default(),
+        series_id: r.get(10)?,
+        recurrence_id: r.get(11)?,
         reminders: serde_json::from_str(&reminders).unwrap_or_default(),
-        created_at: r.get(11)?,
-        updated_at: r.get(12)?,
+        created_at: r.get(13)?,
+        updated_at: r.get(14)?,
     })
 }
 
-const EVENT_COLS: &str = "id, calendar_id, title, description, location, start, \"end\", all_day, rrule, exdates, reminders, created_at, updated_at";
+const EVENT_COLS: &str = "id, calendar_id, title, description, location, start, \"end\", all_day, rrule, exdates, series_id, recurrence_id, reminders, created_at, updated_at";
 
 #[tauri::command(async)]
 pub fn events_list(db: State<'_, Db>) -> Result<Vec<Event>, String> {
@@ -399,12 +466,13 @@ pub fn event_save(db: State<'_, Db>, event: Event) -> Result<Event, String> {
     let reminders = serde_json::to_string(&ev.reminders).unwrap_or_else(|_| "[]".into());
     with_conn(&db, |conn| {
         conn.execute(
-            "INSERT INTO events(id, calendar_id, title, description, location, start, \"end\", all_day, rrule, exdates, reminders, created_at, updated_at)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
-             ON CONFLICT(id) DO UPDATE SET calendar_id=?2, title=?3, description=?4, location=?5, start=?6, \"end\"=?7, all_day=?8, rrule=?9, exdates=?10, reminders=?11, updated_at=?13",
+            "INSERT INTO events(id, calendar_id, title, description, location, start, \"end\", all_day, rrule, exdates, series_id, recurrence_id, reminders, created_at, updated_at)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
+             ON CONFLICT(id) DO UPDATE SET calendar_id=?2, title=?3, description=?4, location=?5, start=?6, \"end\"=?7, all_day=?8, rrule=?9, exdates=?10, series_id=?11, recurrence_id=?12, reminders=?13, updated_at=?15",
             params![
                 ev.id, ev.calendar_id, ev.title, ev.description, ev.location, ev.start, ev.end,
-                ev.all_day as i64, ev.rrule, exdates, reminders, ev.created_at, ev.updated_at
+                ev.all_day as i64, ev.rrule, exdates, ev.series_id, ev.recurrence_id, reminders,
+                ev.created_at, ev.updated_at
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -416,9 +484,16 @@ pub fn event_save(db: State<'_, Db>, event: Event) -> Result<Event, String> {
 #[tauri::command(async)]
 pub fn event_delete(db: State<'_, Db>, id: String) -> Result<(), String> {
     with_conn(&db, |conn| {
-        conn.execute("DELETE FROM events WHERE id=?1", params![id])
-            .map_err(|e| e.to_string())?;
-        conn.execute("DELETE FROM reminders WHERE kind='event' AND ref_id=?1", params![id])
+        // Apagar a série leva as exceções junto: sem isso sobraria uma cópia da
+        // terça movida sem dono, visível no calendário e impossível de ligar de
+        // volta a nada. Os lembretes das exceções vão no mesmo laço.
+        conn.execute(
+            "DELETE FROM reminders WHERE kind='event' AND ref_id IN
+             (SELECT id FROM events WHERE id=?1 OR series_id=?1)",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM events WHERE id=?1 OR series_id=?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
     })
@@ -757,4 +832,105 @@ pub fn db_import(app: tauri::AppHandle, db: State<'_, Db>, path: String) -> Resu
     std::fs::copy(&path, &dest).map_err(|e| format!("falha ao importar: {}", e))?;
     open(&app, &db)?;
     Ok(())
+}
+
+// ----------------------------------------------------------------------------
+// Testes
+// ----------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Schema exatamente como era na v1 (sem series_id/recurrence_id).
+    fn v1_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE calendars (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL,
+                visible INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE events (
+                id TEXT PRIMARY KEY, calendar_id TEXT NOT NULL, title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '',
+                start TEXT NOT NULL, "end" TEXT NOT NULL,
+                all_day INTEGER NOT NULL DEFAULT 0, rrule TEXT NOT NULL DEFAULT '',
+                exdates TEXT NOT NULL DEFAULT '[]', reminders TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+            );
+            INSERT INTO meta(key, value) VALUES('schema_version', '1');
+            INSERT INTO calendars(id, name, color) VALUES('c1', 'Pessoal', '#2563eb');
+            INSERT INTO events(id, calendar_id, title, start, "end", rrule, exdates, created_at, updated_at)
+            VALUES('ev_velho', 'c1', 'Reunião antiga', '2026-07-15T09:00', '2026-07-15T10:00',
+                   'FREQ=WEEKLY;BYDAY=WE', '["2026-07-22T09:00"]', 1, 1);
+            "#,
+        )
+        .unwrap();
+        conn
+    }
+
+    fn version(conn: &Connection) -> i64 {
+        conn.query_row("SELECT value FROM meta WHERE key='schema_version'", [], |r| {
+            r.get::<_, String>(0)
+        })
+        .unwrap()
+        .parse()
+        .unwrap()
+    }
+
+    /// O caso que importa: quem já tem base não pode perder evento na migração.
+    #[test]
+    fn migra_v1_sem_perder_dado() {
+        let conn = v1_db();
+        init_schema(&conn).unwrap();
+
+        assert_eq!(version(&conn), SCHEMA_VERSION);
+        assert!(has_column(&conn, "events", "series_id").unwrap());
+        assert!(has_column(&conn, "events", "recurrence_id").unwrap());
+
+        // O evento antigo continua lá, inteiro, e virou "série normal" (campos
+        // novos vazios) — comportamento idêntico ao de antes da migração.
+        let mut stmt = conn
+            .prepare(&format!("SELECT {} FROM events", EVENT_COLS))
+            .unwrap();
+        let evs: Vec<Event> = stmt
+            .query_map([], row_to_event)
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(evs.len(), 1);
+        let ev = &evs[0];
+        assert_eq!(ev.id, "ev_velho");
+        assert_eq!(ev.title, "Reunião antiga");
+        assert_eq!(ev.rrule, "FREQ=WEEKLY;BYDAY=WE");
+        assert_eq!(ev.exdates, vec!["2026-07-22T09:00".to_string()]);
+        assert_eq!(ev.series_id, "");
+        assert_eq!(ev.recurrence_id, "");
+    }
+
+    /// Reabrir o app roda init_schema de novo: não pode tentar re-adicionar
+    /// coluna nem regredir a versão.
+    #[test]
+    fn migracao_e_idempotente() {
+        let conn = v1_db();
+        init_schema(&conn).unwrap();
+        init_schema(&conn).unwrap();
+        init_schema(&conn).unwrap();
+        assert_eq!(version(&conn), SCHEMA_VERSION);
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    /// Base nova nasce já na versão corrente, sem passar pela migração.
+    #[test]
+    fn base_nova_ja_nasce_na_versao_corrente() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+        assert_eq!(version(&conn), SCHEMA_VERSION);
+        assert!(has_column(&conn, "events", "series_id").unwrap());
+    }
 }

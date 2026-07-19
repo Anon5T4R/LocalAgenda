@@ -15,7 +15,7 @@ export function AgendaView() {
   const groups = useMemo(() => {
     const from = startOfDay(cursor);
     const to = addDays(from, SPAN_DAYS);
-    const occ = expandAll(visibleEvents({ events, calendars, search }), from, to);
+    const occ = expandAll(visibleEvents({ events, calendars, search }), from, to, events);
     const map = new Map<string, Occurrence[]>();
     for (const o of occ) {
       const k = dateKey(o.start.getTime() < from.getTime() ? from : o.start);

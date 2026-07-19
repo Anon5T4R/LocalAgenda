@@ -20,8 +20,23 @@ export interface AgendaEvent {
   allDay: boolean;
   /** RRULE RFC 5545 sem DTSTART; "" = evento único. */
   rrule: string;
-  /** Ocorrências excluídas (início ISO de cada uma). */
+  /** Ocorrências CANCELADAS da série (EXDATE): início ISO de cada uma. */
   exdates: string[];
+  /**
+   * Exceção de série (RECURRENCE-ID do iCal). Quando preenchidos, este evento
+   * NÃO é uma série própria: ele SUBSTITUI uma ocorrência da série `seriesId`.
+   *
+   * `recurrenceId` é a chave da ocorrência ORIGINAL (onde a regra a colocaria),
+   * não o horário atual — é por ela que a expansão sabe qual ocorrência calar.
+   * Guardar a origem é o que impede o bug clássico de aparecer nos dois lugares
+   * quando a exceção é movida de dia.
+   *
+   * Invariante: exceção é sempre evento único (`rrule` vazia), e `recurrenceId`
+   * NUNCA está também em `exdates` da série — cancelada e substituída são
+   * estados mutuamente exclusivos (ver `excludeOccurrence`/`saveOccurrence`).
+   */
+  seriesId: string;
+  recurrenceId: string;
   /** Lembretes: minutos antes do início. */
   reminders: number[];
   createdAt: number;

@@ -39,10 +39,15 @@ export function EventModal() {
   const draft = useUi((s) => s.eventDraft)!;
   const occStart = useUi((s) => s.eventOccStart);
   const close = useUi((s) => s.closeEvent);
-  const { calendars, cursor, settings, saveEvent, removeEvent, excludeOccurrence } = useStore();
+  const { calendars, cursor, settings, saveEvent, removeEvent, saveOccurrence, removeOccurrence } =
+    useStore();
 
   const isEdit = !!draft.id;
+  // Só a SÉRIE pergunta escopo. Uma exceção já é "só esta ocorrência" — voltar a
+  // perguntar deixaria o usuário editar "toda a série" a partir dela, que não é
+  // dela pra editar.
   const recurringScope = isEdit && !!draft.rrule && !!occStart;
+  const isException = !!draft.seriesId && !!draft.recurrenceId;
   const defDate = toIso(draft.start ? parseLocal(draft.start) : cursor, true);
   const defTime = draft.start && draft.start.includes("T") ? draft.start.split("T")[1] : toIso(nextSlot()).split("T")[1];
 
@@ -86,15 +91,18 @@ export function EventModal() {
 
   const save = async () => {
     if (recurringScope && scope === "this" && occStart) {
-      // Destaca esta ocorrência: exclui da série e cria um evento avulso editado.
-      await excludeOccurrence(draft as AgendaEvent, occStart);
-      await saveEvent({ ...fields(), id: "", rrule: "", exdates: [] });
+      // Vira exceção LIGADA à série (não uma cópia solta): a série passa a pular
+      // esta ocorrência pelo RECURRENCE-ID, então ela não aparece nos dois
+      // lugares, e apagar a série leva a exceção junto.
+      await saveOccurrence(draft as AgendaEvent, occStart, fields());
     } else {
       await saveEvent({
         ...fields(),
         id: draft.id,
-        rrule: rruleStr,
+        rrule: isException ? "" : rruleStr,
         exdates: draft.exdates ?? [],
+        seriesId: draft.seriesId ?? "",
+        recurrenceId: draft.recurrenceId ?? "",
         createdAt: draft.createdAt,
       });
     }
@@ -103,7 +111,11 @@ export function EventModal() {
 
   const del = () => {
     if (recurringScope && scope === "this" && occStart) {
-      void excludeOccurrence(draft as AgendaEvent, occStart);
+      void removeOccurrence(draft as AgendaEvent, occStart);
+    } else if (isException) {
+      // Apagar a exceção some SÓ com ela: a origem vira EXDATE na série, senão a
+      // ocorrência voltaria no horário velho assim que a exceção saísse.
+      void removeOccurrence(draft as AgendaEvent, draft.recurrenceId!);
     } else if (draft.id) {
       void removeEvent(draft.id);
     }
@@ -184,6 +196,11 @@ export function EventModal() {
             </div>
           )}
 
+          {isException && <div className="hint">{t("em.exceptionHint")}</div>}
+
+          {/* Exceção não tem regra própria (quem repete é a série) — o bloco de
+              recorrência sai de cena em vez de virar um controle que mente. */}
+          {!isException && (
           <div className="recur-block" style={recurringScope && scope === "this" ? { opacity: 0.5, pointerEvents: "none" } : undefined}>
             <div className="row">
               <div className="field">
@@ -264,6 +281,7 @@ export function EventModal() {
             )}
             {recur.freq && <div className="hint">{describeRRule(rruleStr)}</div>}
           </div>
+          )}
 
           <div className="field">
             <label>{t("em.reminders")}</label>

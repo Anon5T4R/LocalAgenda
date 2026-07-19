@@ -17,7 +17,7 @@ export function MonthView() {
   const byDay = useMemo(() => {
     const from = grid[0];
     const to = addDays(grid[grid.length - 1], 1);
-    const occ = expandAll(visibleEvents({ events, calendars, search }), from, to);
+    const occ = expandAll(visibleEvents({ events, calendars, search }), from, to, events);
     const map = new Map<string, Occurrence[]>();
     for (const o of occ) {
       let d = startOfDay(o.start);

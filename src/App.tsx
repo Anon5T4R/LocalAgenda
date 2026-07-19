@@ -114,7 +114,24 @@ export default function App() {
         const text = b64ToText(await readFileBase64(path));
         const parsed = parseIcs(text);
         const calId = useStore.getState().calendars[0]?.id ?? "";
-        for (const p of parsed) await useStore.getState().saveEvent({ ...p, calendarId: calId });
+        // Duas passadas: as séries primeiro, pra que as exceções (que no arquivo
+        // referenciam a série por UID) já encontrem o id local dela em `byUid`.
+        // Numa passada só, a exceção salvaria com `seriesId` vazio e viraria
+        // evento solto — a série voltaria a mostrar a ocorrência no lugar velho.
+        const byUid = new Map<string, string>();
+        const order = [...parsed].sort((a, b) => Number(!!a.recurrenceId) - Number(!!b.recurrenceId));
+        for (const { uid, ...p } of order) {
+          const seriesId = p.recurrenceId && uid ? byUid.get(uid) ?? "" : "";
+          // Exceção sem série correspondente no arquivo: entra como evento
+          // normal em vez de sumir (melhor esforço, o compromisso não se perde).
+          const saved = await useStore.getState().saveEvent({
+            ...p,
+            calendarId: calId,
+            seriesId,
+            recurrenceId: seriesId ? p.recurrenceId : "",
+          });
+          if (uid && saved && !p.recurrenceId) byUid.set(uid, saved.id);
+        }
         if (parsed.length) {
           useUi.getState().pushToast({
             id: crypto.randomUUID(),
