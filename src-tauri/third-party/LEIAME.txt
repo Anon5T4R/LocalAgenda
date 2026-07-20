@@ -1,0 +1,29 @@
+Binários de terceiros distribuídos com o LocalAgenda
+====================================================
+
+O LocalAgenda é software livre sob a licença MIT (veja o LICENSE na raiz do
+repositório). O instalador acompanha um programa de terceiro em build NÃO
+MODIFICADA, com licença própria — o que segue cumpre as obrigações de quem
+redistribui esse binário.
+
+Ele roda como PROCESSO SEPARADO (sidecar), invocado por linha de comando. O
+código do LocalAgenda não faz linkagem com ele: as duas obras são apenas agregadas no
+mesmo instalador e cada uma mantém a sua licença.
+
+
+1) llama.cpp — MIT
+------------------
+Runtime de inferência local (llama-server.exe e as bibliotecas ggml que vão ao
+lado dele em binaries/llama/).
+
+  tag do upstream ... b10066
+  fonte ............. https://github.com/ggml-org/llama.cpp (tag b10066)
+  espelho ........... https://github.com/Anon5T4R/Local-runtimes (release v1)
+  sha256 (win) ...... 57cb5dd3143b2814b8d1d14587867628bfb126536abfa7085ca9560c4919d998
+
+  Texto da licença .. LICENSE-llama.cpp.txt
+
+  A MIT exige que o aviso de copyright e o texto da permissão acompanhem as
+  cópias do software. Os zips de release do llama.cpp NÃO trazem o LICENSE
+  dentro (conferido no asset espelhado), então não há o que extrair do
+  download: a cópia fica aqui, versionada. Mesma decisão do LocalOffice.
