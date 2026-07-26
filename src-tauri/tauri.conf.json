@@ -37,7 +37,8 @@
         "ext": ["ics"],
         "name": "Calendário iCalendar",
         "description": "Evento/calendário iCalendar",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "text/calendar"
       }
     ],
     "icon": [
