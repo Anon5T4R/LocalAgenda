@@ -32,6 +32,11 @@
       }
     },
     "resources": ["binaries/llama/*", "third-party/*"],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "desktop-entry.desktop"
+      }
+    },
     "fileAssociations": [
       {
         "ext": ["ics"],
