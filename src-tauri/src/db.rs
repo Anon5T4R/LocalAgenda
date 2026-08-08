@@ -804,7 +804,7 @@ pub fn setting_bool_opt(db: &Db, key: &str) -> Option<bool> {
     .unwrap_or(None)
 }
 
-/// Lê uma string das configurações, com padrão. O sync_path (arquivo pra onde o
+/// Lê uma string das configurações, com padrão. O syncPath (arquivo pra onde o
 /// banco é copiado a cada alteração) usa isso; `None`/não-string = padrão.
 pub fn setting_str(db: &Db, key: &str, default: &str) -> String {
     with_conn(db, |conn| {
@@ -848,13 +848,13 @@ pub fn settings_set(db: State<'_, Db>, value: serde_json::Value) -> Result<(), S
 /// Caminho do arquivo de sync ("" = desligado).
 #[tauri::command(async)]
 pub fn sync_path_get(db: State<'_, Db>) -> Result<String, String> {
-    Ok(setting_str(&db, "sync_path", ""))
+    Ok(setting_str(&db, "syncPath", ""))
 }
 
 /// Define o caminho do arquivo de sync, preservando as demais configurações.
 #[tauri::command(async)]
 pub fn sync_path_set(db: State<'_, Db>, path: String) -> Result<(), String> {
-    set_setting_str(&db, "sync_path", &path)
+    set_setting_str(&db, "syncPath", &path)
 }
 
 /// "Impressão digital" do arquivo de sync: mtime (epoch, com subsegundo) +
@@ -933,7 +933,7 @@ pub fn sync_external_changed(db: State<'_, Db>) -> Result<bool, String> {
     with_conn(&db, |conn| {
         let v = read_settings(conn)?;
         let path = v
-            .get("sync_path")
+            .get("syncPath")
             .and_then(|p| p.as_str())
             .map(|s| s.to_string())
             .unwrap_or_default();
@@ -948,7 +948,7 @@ pub fn sync_external_changed(db: State<'_, Db>) -> Result<bool, String> {
 /// sync_path. Chamado pelo comando `sync_now` (front) e por saídas do Rust
 /// que escrevem por fora da store (snooze, tick, exit).
 pub fn autosave(app: &tauri::AppHandle, db: &Db) -> Result<(), String> {
-    let path = setting_str(db, "sync_path", "");
+    let path = setting_str(db, "syncPath", "");
     if path.is_empty() {
         return Ok(());
     }
@@ -1010,7 +1010,7 @@ pub fn db_import(app: tauri::AppHandle, db: State<'_, Db>, path: String) -> Resu
     // Se o importado É o arquivo de sync (botão "Recarregar do disco"), o
     // estado dele passa a ser o "nosso" — senão a 1ª sync seguinte acusaria
     // mudança externa à toa.
-    let sync_path = setting_str(&db, "sync_path", "");
+    let sync_path = setting_str(&db, "syncPath", "");
     if !sync_path.is_empty() {
         let same = std::fs::canonicalize(&path).ok() == std::fs::canonicalize(&sync_path).ok();
         if same {
