@@ -32,3 +32,9 @@ Release = bump de versão nos 3 arquivos (`package.json`, `src-tauri/tauri.conf.
 ## Licença
 
 MIT — parte da suíte **Local/Taylor** (conta [Anon5T4R](https://github.com/Anon5T4R)).
+
+## Android
+
+App nativo **LocalAgenda Android** — sincroniza via arquivo `.db` (OneDrive/Google Drive/Syncthing/local) usando SAF. Mesmo schema v3 do desktop (lembretes com snooze persistem no sync).
+
+Repo: <https://github.com/Anon5T4R/LocalAgendaAndroid> (privado, submodule em `Local/LocalAgendaAndroid`)
