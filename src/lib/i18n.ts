@@ -246,6 +246,11 @@ const pt = {
   "set.exportIcs": "⬆ Exportar .ics",
   "set.backup": "💾 Backup",
   "set.restore": "♻ Restaurar",
+  "set.syncPath": "Sincronizar com arquivo (Android)",
+  "set.syncPathHint":
+    "O LocalAgenda copia o banco (agenda.db) pra cá a cada alteração. O app Android abre o mesmo arquivo pra sincronizar os dois.",
+  "set.chooseSyncFile": "Escolher arquivo…",
+  "set.clearSync": "Remover",
   "set.foot": "LocalAgenda · suíte Local/Taylor · 100% offline",
   "set.busy.importing": "Importando…",
   "set.busy.imported": "{n} evento(s) importado(s).",
@@ -325,6 +330,15 @@ const pt = {
   "notif.alarm.plain": "⏰ Alarme",
   "notif.alarm.body": "Alarme das {time}",
   "notif.summary.title": "Sua agenda de hoje",
+
+  // --- SyncConflictDialog (arquivo de sync mudou fora do app) ---
+  "sync.title": "Agenda alterada em outro lugar",
+  "sync.body":
+    "O arquivo de sincronização mudou fora do LocalAgenda desde a última gravação, e há alterações locais pendentes. O que você quer fazer?",
+  "sync.reload": "Recarregar do disco",
+  "sync.overwrite": "Sobrescrever",
+  "sync.reloadHint": "Descarta as alterações locais pendentes e carrega a versão do arquivo.",
+  "sync.overwriteHint": "Mantém as alterações locais e grava por cima da versão do arquivo.",
 } as const;
 
 export type MessageKey = keyof typeof pt;
@@ -525,6 +539,11 @@ const en: Record<MessageKey, string> = {
   "set.exportIcs": "⬆ Export .ics",
   "set.backup": "💾 Backup",
   "set.restore": "♻ Restore",
+  "set.syncPath": "Sync with a file (Android)",
+  "set.syncPathHint":
+    "LocalAgenda copies the database (agenda.db) here on every change. The Android app opens the same file to keep both in sync.",
+  "set.chooseSyncFile": "Choose file…",
+  "set.clearSync": "Remove",
   "set.foot": "LocalAgenda · Local/Taylor suite · 100% offline",
   "set.busy.importing": "Importing…",
   "set.busy.imported": "{n} event(s) imported.",
@@ -599,6 +618,15 @@ const en: Record<MessageKey, string> = {
   "notif.alarm.plain": "⏰ Alarm",
   "notif.alarm.body": "{time} alarm",
   "notif.summary.title": "Your schedule today",
+
+  // --- SyncConflictDialog ---
+  "sync.title": "Schedule changed elsewhere",
+  "sync.body":
+    "The sync file changed outside LocalAgenda since the last save, and there are pending local changes. What do you want to do?",
+  "sync.reload": "Reload from disk",
+  "sync.overwrite": "Overwrite",
+  "sync.reloadHint": "Discards the pending local changes and loads the file version.",
+  "sync.overwriteHint": "Keeps the local changes and writes over the file version.",
 };
 
 const es: Record<MessageKey, string> = {
@@ -797,6 +825,11 @@ const es: Record<MessageKey, string> = {
   "set.exportIcs": "⬆ Exportar .ics",
   "set.backup": "💾 Copia de seguridad",
   "set.restore": "♻ Restaurar",
+  "set.syncPath": "Sincronizar con un archivo (Android)",
+  "set.syncPathHint":
+    "LocalAgenda copia la base de datos (agenda.db) aquí con cada cambio. La app Android abre el mismo archivo para sincronizar ambos.",
+  "set.chooseSyncFile": "Elegir archivo…",
+  "set.clearSync": "Quitar",
   "set.foot": "LocalAgenda · suite Local/Taylor · 100% sin conexión",
   "set.busy.importing": "Importando…",
   "set.busy.imported": "{n} evento(s) importado(s).",
@@ -871,6 +904,15 @@ const es: Record<MessageKey, string> = {
   "notif.alarm.plain": "⏰ Alarma",
   "notif.alarm.body": "Alarma de las {time}",
   "notif.summary.title": "Tu agenda de hoy",
+
+  // --- SyncConflictDialog ---
+  "sync.title": "Agenda cambiada en otro lugar",
+  "sync.body":
+    "El archivo de sincronización cambió fuera de LocalAgenda desde la última grabación, y hay cambios locales pendientes. ¿Qué quieres hacer?",
+  "sync.reload": "Recargar del disco",
+  "sync.overwrite": "Sobrescribir",
+  "sync.reloadHint": "Descarta los cambios locales pendientes y carga la versión del archivo.",
+  "sync.overwriteHint": "Mantiene los cambios locales y graba por encima de la versión del archivo.",
 };
 
 const DICTS: Record<Locale, Record<MessageKey, string>> = { pt, en, es };

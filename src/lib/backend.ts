@@ -59,6 +59,14 @@ export const dbImport = (path: string) => cmd<void>("db_import", { path });
 export const autostartGet = () => cmd<boolean>("autostart_get");
 export const autostartSet = (enabled: boolean) => cmd<void>("autostart_set", { enabled });
 
+// --- sync por arquivo (Android via SAF) ---
+export const syncPathGet = () => cmd<string>("sync_path_get");
+export const syncPathSet = (path: string) => cmd<void>("sync_path_set", { path });
+/** Checkpoint WAL + cópia do banco pro sync_path (gravação imediata). */
+export const syncNow = () => cmd<void>("sync_now");
+/** `true` se o arquivo de sync mudou fora do app desde a última cópia nossa. */
+export const syncExternalChanged = () => cmd<boolean>("sync_external_changed");
+
 // --- IA (llama-server) ---
 export interface ModelInfo {
   name: string;

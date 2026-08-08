@@ -108,6 +108,9 @@ export interface Settings {
   soundEnabled: boolean;
   /** Volume do som (0..1). */
   soundVolume: number;
+  /** Arquivo .db de sincronização ("" = desligado). O Android abre o mesmo
+   *  arquivo via SAF; o desktop copia o banco pra cá a cada alteração. */
+  syncPath: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -121,6 +124,7 @@ export const DEFAULT_SETTINGS: Settings = {
   nGpuLayers: 0,
   soundEnabled: true,
   soundVolume: 0.7,
+  syncPath: "",
 };
 
 export const CALENDAR_COLORS = [

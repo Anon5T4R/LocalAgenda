@@ -6,12 +6,15 @@ import {
   calendarDelete,
   calendarSave,
   calendarsList,
+  dbImport,
   eventDelete,
   eventSave,
   eventsList,
   inTauri,
   settingsGet,
   settingsSet,
+  syncExternalChanged,
+  syncNow,
   taskDelete,
   taskSave,
   tasksList,
@@ -109,6 +112,19 @@ interface StoreState {
 
   updateSettings(patch: Partial<Settings>): Promise<void>;
   refreshReminders(): Promise<void>;
+
+  /**
+   * `true` = o arquivo de sync mudou fora do app com alterações locais
+   * pendentes — o flush parou de sobrescrever até o usuário decidir no
+   * diálogo ("Recarregar do disco" / "Sobrescrever").
+   */
+  externalChange: boolean;
+  /** Flush do autosave: confere mudança externa e, se ok, copia pro sync_path. */
+  flushSyncSave(): Promise<void>;
+  /** "Recarregar do disco": importa o arquivo de sync por cima do local. */
+  reloadFromDisk(): Promise<void>;
+  /** "Sobrescrever": mantém o local e grava por cima do arquivo de sync. */
+  forceSave(): Promise<void>;
 }
 
 export const useStore = create<StoreState>((set, get) => ({
@@ -122,6 +138,7 @@ export const useStore = create<StoreState>((set, get) => ({
   view: "month",
   cursor: new Date(),
   search: "",
+  externalChange: false,
 
   async load() {
     if (!inTauri()) {
@@ -168,6 +185,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const saved = await calendarSave(cal);
     const rest = get().calendars.filter((x) => x.id !== saved.id);
     set({ calendars: [...rest, saved].sort((a, b) => a.sort - b.sort) });
+    scheduleAutosave();
   },
 
   async removeCalendar(id) {
@@ -176,6 +194,7 @@ export const useStore = create<StoreState>((set, get) => ({
       calendars: get().calendars.filter((c) => c.id !== id),
       events: get().events.filter((e) => e.calendarId !== id),
     });
+    scheduleAutosave();
     void get().refreshReminders();
   },
 
@@ -191,6 +210,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const saved = await eventSave(ev);
     const rest = get().events.filter((x) => x.id !== saved.id);
     set({ events: [...rest, saved] });
+    scheduleAutosave();
     void get().refreshReminders();
     return saved;
   },
@@ -200,6 +220,7 @@ export const useStore = create<StoreState>((set, get) => ({
     // não deixar exceção órfã na memória até o próximo load.
     await eventDelete(id);
     set({ events: get().events.filter((e) => e.id !== id && e.seriesId !== id) });
+    scheduleAutosave();
     void get().refreshReminders();
   },
 
@@ -264,12 +285,14 @@ export const useStore = create<StoreState>((set, get) => ({
     const saved = await taskSave(task);
     const rest = get().tasks.filter((x) => x.id !== saved.id);
     set({ tasks: [...rest, saved] });
+    scheduleAutosave();
     void get().refreshReminders();
   },
 
   async removeTask(id) {
     await taskDelete(id);
     set({ tasks: get().tasks.filter((t) => t.id !== id && t.parentId !== id) });
+    scheduleAutosave();
     void get().refreshReminders();
   },
 
@@ -304,12 +327,14 @@ export const useStore = create<StoreState>((set, get) => ({
     const saved = await alarmSave(alarm);
     const rest = get().alarms.filter((x) => x.id !== saved.id);
     set({ alarms: [...rest, saved].sort((x, y) => x.sort - y.sort) });
+    scheduleAutosave();
     void get().refreshReminders();
   },
 
   async removeAlarm(id) {
     await alarmDelete(id);
     set({ alarms: get().alarms.filter((a) => a.id !== id) });
+    scheduleAutosave();
     void get().refreshReminders();
   },
 
@@ -322,6 +347,7 @@ export const useStore = create<StoreState>((set, get) => ({
   async updateSettings(patch) {
     const settings = { ...get().settings, ...patch };
     set({ settings });
+    scheduleAutosave();
     if (inTauri()) {
       await settingsSet(settings);
       void get().refreshReminders();
@@ -337,7 +363,68 @@ export const useStore = create<StoreState>((set, get) => ({
       console.error("falha ao sincronizar lembretes", e);
     }
   },
+
+  async flushSyncSave() {
+    if (!inTauri()) return;
+    const { settings, externalChange } = get();
+    if (!settings.syncPath) return;
+    if (externalChange) return; // decisão pendente: não sobrescreve o arquivo
+    try {
+      const changed = await syncExternalChanged();
+      if (changed) {
+        // Alguém mexeu no arquivo fora do app com alterações locais no ar:
+        // segura a cópia e deixa o usuário decidir no diálogo.
+        set({ externalChange: true });
+        return;
+      }
+      await syncNow();
+    } catch (e) {
+      console.error("falha ao salvar no arquivo de sync", e);
+    }
+  },
+
+  async reloadFromDisk() {
+    if (!inTauri()) return;
+    const { settings } = get();
+    if (!settings.syncPath) return;
+    try {
+      // O Rust troca o banco local pelo arquivo de sync (com backup .bak) e
+      // registra o fingerprint dele — a próxima sync não acusa mudança à toa.
+      await dbImport(settings.syncPath);
+      await get().load();
+      set({ externalChange: false });
+    } catch (e) {
+      console.error("falha ao recarregar do disco", e);
+    }
+  },
+
+  async forceSave() {
+    if (!inTauri()) return;
+    const { settings } = get();
+    if (!settings.syncPath) return;
+    try {
+      await syncNow();
+      set({ externalChange: false });
+    } catch (e) {
+      console.error("falha ao sobrescrever o arquivo de sync", e);
+    }
+  },
 }));
+
+/** Debounce do autosave: qualquer escrita reinicia os 2s. Na hora, o flush
+ *  confere se o arquivo de sync mudou fora do app — se mudou, levanta o
+ *  conflito em vez de sobrescrever por cima. */
+const AUTOSAVE_DELAY_MS = 2000;
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleAutosave(): void {
+  if (!inTauri()) return;
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    autosaveTimer = null;
+    void useStore.getState().flushSyncSave();
+  }, AUTOSAVE_DELAY_MS);
+}
 
 /** Mapa id→cor de calendário. */
 export function calendarColorMap(calendars: Calendar[]): Record<string, string> {

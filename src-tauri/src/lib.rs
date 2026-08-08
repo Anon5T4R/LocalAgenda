@@ -197,6 +197,14 @@ fn autostart_set(app: tauri::AppHandle, db: State<'_, Db>, enabled: bool) -> Res
 fn dispatch_due(app: &tauri::AppHandle, db: &Db) {
     let now = db::now_ms();
     let due = db::take_due_reminders(db, now);
+    if !due.is_empty() {
+        // O tick gravou fired=1 no banco: reflete no arquivo de sync na hora
+        // (senão o Android re-notificaria o que já disparou). Best-effort —
+        // falha aqui não derruba o disparo.
+        if let Err(e) = db::autosave(app, db) {
+            eprintln!("[localagenda] autosave pós-disparo falhou: {e}");
+        }
+    }
     for r in due {
         let body = if r.body.is_empty() { "Lembrete".to_string() } else { r.body.clone() };
         let _ = app
@@ -386,6 +394,10 @@ pub fn run() {
             db::reminder_snooze,
             db::settings_get,
             db::settings_set,
+            db::sync_path_get,
+            db::sync_path_set,
+            db::sync_now,
+            db::sync_external_changed,
             db::db_export,
             db::db_import,
             llm::list_models,
@@ -396,8 +408,15 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // Garante que o llama-server morre quando o app sai.
+            // Save de saída: garante que a última alteração chega no sync_path
+            // mesmo sem os 2s de debounce (fechou logo depois de editar).
             if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app_handle.try_state::<Db>() {
+                    if let Err(e) = db::autosave(app_handle, &state) {
+                        eprintln!("[localagenda] autosave de saída falhou: {e}");
+                    }
+                }
+                // Garante que o llama-server morre quando o app sai.
                 if let Some(state) = app_handle.try_state::<Mutex<llm::LlmState>>() {
                     if let Ok(mut s) = state.lock() {
                         if let Some(child) = s.child.as_mut() {

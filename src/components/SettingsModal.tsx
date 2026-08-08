@@ -73,6 +73,11 @@ export function SettingsModal() {
     setBusy(t("set.busy.restored"));
   };
 
+  const chooseSyncFile = async () => {
+    const path = await save({ defaultPath: "agenda.db", filters: [{ name: "Agenda (SQLite)", extensions: ["db"] }] });
+    if (typeof path === "string" && path) await updateSettings({ syncPath: path });
+  };
+
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="modal wide">
@@ -230,6 +235,30 @@ export function SettingsModal() {
                 </button>
               </div>
               {busy && <div className="hint" style={{ marginTop: 6 }}>{busy}</div>}
+            </div>
+          )}
+
+          {/* Sincronização por arquivo (Android via SAF) */}
+          {inTauri() && (
+            <div className="field">
+              <label>{t("set.syncPath")}</label>
+              <div className="inline" style={{ gap: 8 }}>
+                <input
+                  value={settings.syncPath}
+                  placeholder={t("set.chooseSyncFile")}
+                  onChange={(e) => updateSettings({ syncPath: e.target.value })}
+                  style={{ flex: 1 }}
+                />
+                <button className="btn ghost" onClick={chooseSyncFile}>
+                  {t("set.chooseSyncFile")}
+                </button>
+                {settings.syncPath && (
+                  <button className="btn ghost" onClick={() => updateSettings({ syncPath: "" })}>
+                    {t("set.clearSync")}
+                  </button>
+                )}
+              </div>
+              <div className="hint" style={{ marginTop: 6 }}>{t("set.syncPathHint")}</div>
             </div>
           )}
         </div>

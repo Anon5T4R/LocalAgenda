@@ -13,6 +13,14 @@ import type { AgendaEvent } from "../../lib/types";
 const rows = new Map<string, AgendaEvent>();
 let seq = 0;
 
+/** Estado mutável do sync falso (vi.mock é hoisted: variável tem que vir de
+ *  cá, senão o factory não a enxerga). */
+const h = vi.hoisted(() => ({
+  externalChanged: false,
+  syncNow: vi.fn(async () => {}),
+  dbImport: vi.fn(async () => {}),
+}));
+
 vi.mock("../../lib/backend", () => ({
   inTauri: () => true,
   calendarsList: async () => [{ id: "c1", name: "Pessoal", color: "#000", visible: true, sort: 0 }],
@@ -38,6 +46,9 @@ vi.mock("../../lib/backend", () => ({
   settingsSet: async () => {},
   remindersReplace: async () => {},
   remindersDispatch: async () => {},
+  syncExternalChanged: async () => h.externalChanged,
+  syncNow: h.syncNow,
+  dbImport: h.dbImport,
 }));
 
 const { useStore } = await import("../store");
@@ -61,7 +72,10 @@ const serie = () =>
 beforeEach(async () => {
   rows.clear();
   seq = 0;
-  useStore.setState({ events: [], calendars: [], tasks: [], alarms: [] });
+  h.externalChanged = false;
+  h.syncNow.mockClear();
+  h.dbImport.mockClear();
+  useStore.setState({ events: [], calendars: [], tasks: [], alarms: [], settings: { ...useStore.getState().settings, syncPath: "" }, externalChange: false });
   await useStore.getState().load();
   // "Toda quarta 9h, 3×" → 15, 22 e 29 de julho de 2026.
   await useStore.getState().saveEvent({
@@ -189,5 +203,70 @@ describe("exceções de série na store", () => {
     // gravada mas nunca desenhada.
     expect(serie().exdates).toEqual([]);
     expect(daysFromDb()).toEqual([15, 24, 29]);
+  });
+});
+
+describe("sync por arquivo (Android via SAF)", () => {
+  it("flush detecta mudança externa e SEGURA a cópia (não sobrescreve)", async () => {
+    useStore.setState({ settings: { ...useStore.getState().settings, syncPath: "X:\\sync\\agenda.db" } });
+    h.externalChanged = true;
+
+    await useStore.getState().flushSyncSave();
+
+    expect(useStore.getState().externalChange).toBe(true);
+    expect(h.syncNow).not.toHaveBeenCalled();
+  });
+
+  it("flush com arquivo intacto copia e não levanta conflito", async () => {
+    useStore.setState({ settings: { ...useStore.getState().settings, syncPath: "X:\\sync\\agenda.db" } });
+
+    await useStore.getState().flushSyncSave();
+
+    expect(useStore.getState().externalChange).toBe(false);
+    expect(h.syncNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("flush com decisão pendente não fica re-sobrescrevendo", async () => {
+    useStore.setState({
+      settings: { ...useStore.getState().settings, syncPath: "X:\\sync\\agenda.db" },
+      externalChange: true,
+    });
+
+    await useStore.getState().flushSyncSave();
+
+    expect(h.syncNow).not.toHaveBeenCalled();
+  });
+
+  it("forceSave (Sobrescrever) copia por cima e limpa o conflito", async () => {
+    useStore.setState({
+      settings: { ...useStore.getState().settings, syncPath: "X:\\sync\\agenda.db" },
+      externalChange: true,
+    });
+
+    await useStore.getState().forceSave();
+
+    expect(h.syncNow).toHaveBeenCalledTimes(1);
+    expect(useStore.getState().externalChange).toBe(false);
+  });
+
+  it("reloadFromDisk (Recarregar do disco) importa o arquivo e limpa o conflito", async () => {
+    useStore.setState({
+      settings: { ...useStore.getState().settings, syncPath: "X:\\sync\\agenda.db" },
+      externalChange: true,
+    });
+
+    await useStore.getState().reloadFromDisk();
+
+    expect(h.dbImport).toHaveBeenCalledWith("X:\\sync\\agenda.db");
+    expect(useStore.getState().externalChange).toBe(false);
+    // Depois de recarregar, o estado veio do banco (recarregado via load()).
+    expect(useStore.getState().loaded).toBe(true);
+  });
+
+  it("sem sync_path o flush é no-op (não chama o backend)", async () => {
+    // beforeEach zerou o syncPath.
+    await useStore.getState().flushSyncSave();
+    expect(h.syncNow).not.toHaveBeenCalled();
+    expect(useStore.getState().externalChange).toBe(false);
   });
 });

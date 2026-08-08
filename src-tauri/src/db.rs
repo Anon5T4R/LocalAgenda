@@ -24,7 +24,8 @@ use tauri::{Manager, State};
 pub struct Db(pub Arc<Mutex<Option<Connection>>>);
 
 /// v1 → v2: `series_id`/`recurrence_id` em `events` (exceções de recorrência).
-const SCHEMA_VERSION: i64 = 2;
+/// v2 → v3: `snoozed` em `reminders` (o adiamento sobrevive ao replace).
+const SCHEMA_VERSION: i64 = 3;
 
 pub fn now_ms() -> i64 {
     SystemTime::now()
@@ -213,6 +214,15 @@ fn migrate(conn: &Connection, from: i64) -> Result<(), String> {
             }
         }
     }
+    if from < 3 {
+        if !has_column(conn, "reminders", "snoozed")? {
+            conn.execute(
+                "ALTER TABLE reminders ADD COLUMN snoozed INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .map_err(|e| format!("falha ao migrar reminders.snoozed: {}", e))?;
+        }
+    }
     Ok(())
 }
 
@@ -272,7 +282,8 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
             title TEXT NOT NULL,
             body TEXT NOT NULL DEFAULT '',
             fire_at INTEGER NOT NULL,
-            fired INTEGER NOT NULL DEFAULT 0
+            fired INTEGER NOT NULL DEFAULT 0,
+            snoozed INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS alarms (
             id TEXT PRIMARY KEY,
@@ -580,19 +591,21 @@ pub fn task_delete(db: State<'_, Db>, id: String) -> Result<(), String> {
 // ----------------------------------------------------------------------------
 
 /// Substitui os lembretes AINDA NÃO disparados pelos que o front calculou
-/// (janela rolante). Os já disparados (fired=1) ficam intactos e, como os IDs
-/// são determinísticos (`kind:refId:occ:min`), o `INSERT OR IGNORE` impede que
-/// um lembrete já mostrado reapareça — cada ocorrência notifica no máximo 1×.
+/// (janela rolante). Os já disparados (fired=1) e os ADIADOS (snoozed=1) ficam
+/// intactos e, como os IDs são determinísticos (`kind:refId:occ:min`), o
+/// `INSERT OR IGNORE` impede que um lembrete já mostrado reapareça — cada
+/// ocorrência notifica no máximo 1×. O adiado só sai daqui quando o tick o
+/// dispara (que zera o snoozed) ou quando o dono é apagado.
 #[tauri::command(async)]
 pub fn reminders_replace(db: State<'_, Db>, items: Vec<Reminder>) -> Result<(), String> {
     with_conn(&db, |conn| {
-        conn.execute("DELETE FROM reminders WHERE fired=0", [])
+        conn.execute("DELETE FROM reminders WHERE fired=0 AND snoozed=0", [])
             .map_err(|e| e.to_string())?;
         for r in &items {
             let id = if r.id.is_empty() { gen_id("rem") } else { r.id.clone() };
             conn.execute(
-                "INSERT OR IGNORE INTO reminders(id, kind, ref_id, occ, title, body, fire_at, fired)
-                 VALUES(?1,?2,?3,?4,?5,?6,?7,0)",
+                "INSERT OR IGNORE INTO reminders(id, kind, ref_id, occ, title, body, fire_at, fired, snoozed)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,0,0)",
                 params![id, r.kind, r.ref_id, r.occ, r.title, r.body, r.fire_at],
             )
             .map_err(|e| e.to_string())?;
@@ -601,13 +614,14 @@ pub fn reminders_replace(db: State<'_, Db>, items: Vec<Reminder>) -> Result<(), 
     })
 }
 
-/// Adia um lembrete: volta a `fired=0` com novo horário (agora + minutos).
-#[tauri::command(async)]
-pub fn reminder_snooze(db: State<'_, Db>, id: String, minutes: i64) -> Result<(), String> {
+/// Núcleo do adiamento (sem o autosave): atualiza o lembrete pra `fired=0`,
+/// `snoozed=1` e novo horário. Separado do comando pra o teste chamar com um
+/// `Db` de memória.
+fn snooze(db: &Db, id: &str, minutes: i64) -> Result<(), String> {
     let fire_at = now_ms() + minutes * 60_000;
-    with_conn(&db, |conn| {
+    with_conn(db, |conn| {
         conn.execute(
-            "UPDATE reminders SET fire_at=?1, fired=0 WHERE id=?2",
+            "UPDATE reminders SET fire_at=?1, fired=0, snoozed=1 WHERE id=?2",
             params![fire_at, id],
         )
         .map_err(|e| e.to_string())?;
@@ -615,8 +629,28 @@ pub fn reminder_snooze(db: State<'_, Db>, id: String, minutes: i64) -> Result<()
     })
 }
 
+/// Adia um lembrete: volta a `fired=0` com novo horário (agora + minutos) e
+/// marca `snoozed=1` — é o que o faz sobreviver ao próximo `reminders_replace`
+/// (que só apaga `fired=0 AND snoozed=0`). O tick o dispara quando o novo
+/// horário chega, zerando o snoozed junto.
+#[tauri::command(async)]
+pub fn reminder_snooze(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    id: String,
+    minutes: i64,
+) -> Result<(), String> {
+    snooze(&db, &id, minutes)?;
+    // O adiamento é uma escrita que não passa pela store (o front chama o
+    // comando direto): espelha no sync_path na hora, best-effort.
+    let _ = autosave(&app, &db);
+    Ok(())
+}
+
 /// Colhe os lembretes vencidos (fired=0 e fire_at<=agora) e os marca disparados,
 /// tudo na mesma trava. Usado pelo tick — o disparo da notificação é no lib.rs.
+/// Adiados entram aqui normalmente: `snoozed=1` com `fired=0` e o novo horário
+/// vencido é hora de disparar (e o snoozed é zerado junto).
 pub fn take_due_reminders(db: &Db, now: i64) -> Vec<Reminder> {
     let out = with_conn(db, |conn| {
         let mut stmt = conn
@@ -641,7 +675,10 @@ pub fn take_due_reminders(db: &Db, now: i64) -> Vec<Reminder> {
             .map_err(|e| e.to_string())?;
         let items: Vec<Reminder> = rows.filter_map(|r| r.ok()).collect();
         for r in &items {
-            let _ = conn.execute("UPDATE reminders SET fired=1 WHERE id=?1", params![r.id]);
+            let _ = conn.execute(
+                "UPDATE reminders SET fired=1, snoozed=0 WHERE id=?1",
+                params![r.id],
+            );
         }
         Ok(items)
     });
@@ -709,16 +746,39 @@ pub fn alarm_delete(db: State<'_, Db>, id: String) -> Result<(), String> {
 // Configurações (blob JSON em meta)
 // ----------------------------------------------------------------------------
 
+/// Lê o blob de configurações inteiro (ou `{}` se nunca gravado/ilegível).
+fn read_settings(conn: &Connection) -> Result<serde_json::Value, String> {
+    let raw: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key='settings'", [], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(raw
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({})))
+}
+
 #[tauri::command(async)]
 pub fn settings_get(db: State<'_, Db>) -> Result<serde_json::Value, String> {
-    with_conn(&db, |conn| {
-        let raw: Option<String> = conn
-            .query_row("SELECT value FROM meta WHERE key='settings'", [], |r| r.get(0))
-            .optional()
-            .map_err(|e| e.to_string())?;
-        Ok(raw
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_else(|| serde_json::json!({})))
+    with_conn(&db, read_settings)
+}
+
+/// Grava UMA chave no blob de configurações preservando o resto (merge). O
+/// front reescreve o blob inteiro via `settings_set`; daqui só mexemos em uma
+/// chave por vez (autostart, sync_path…).
+fn set_setting_value(db: &Db, key: &str, value: serde_json::Value) -> Result<(), String> {
+    with_conn(db, |conn| {
+        let mut v = read_settings(conn)?;
+        if !v.is_object() {
+            v = serde_json::json!({});
+        }
+        v[key] = value;
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES('settings', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=?1",
+            params![v.to_string()],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
     })
 }
 
@@ -726,14 +786,10 @@ pub fn settings_get(db: State<'_, Db>) -> Result<serde_json::Value, String> {
 /// (ex.: "fechar minimiza pra bandeja?") sem passar pela camada de comando.
 pub fn setting_bool(db: &Db, key: &str, default: bool) -> bool {
     with_conn(db, |conn| {
-        let raw: Option<String> = conn
-            .query_row("SELECT value FROM meta WHERE key='settings'", [], |r| r.get(0))
-            .optional()
-            .map_err(|e| e.to_string())?;
-        let v: serde_json::Value = raw
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_else(|| serde_json::json!({}));
-        Ok(v.get(key).and_then(|b| b.as_bool()).unwrap_or(default))
+        Ok(read_settings(conn)?
+            .get(key)
+            .and_then(|b| b.as_bool())
+            .unwrap_or(default))
     })
     .unwrap_or(default)
 }
@@ -743,41 +799,32 @@ pub fn setting_bool(db: &Db, key: &str, default: bool) -> bool {
 /// não decidiu" (e, nesse caso, herdar o estado que já está no SO).
 pub fn setting_bool_opt(db: &Db, key: &str) -> Option<bool> {
     with_conn(db, |conn| {
-        let raw: Option<String> = conn
-            .query_row("SELECT value FROM meta WHERE key='settings'", [], |r| r.get(0))
-            .optional()
-            .map_err(|e| e.to_string())?;
-        let v: serde_json::Value = raw
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_else(|| serde_json::json!({}));
-        Ok(v.get(key).and_then(|b| b.as_bool()))
+        Ok(read_settings(conn)?.get(key).and_then(|b| b.as_bool()))
     })
     .unwrap_or(None)
 }
 
-/// Grava um booleano no blob de configurações preservando o resto (merge). O
-/// front reescreve o blob inteiro; daqui só mexemos numa chave.
-pub fn set_setting_bool(db: &Db, key: &str, value: bool) -> Result<(), String> {
+/// Lê uma string das configurações, com padrão. O sync_path (arquivo pra onde o
+/// banco é copiado a cada alteração) usa isso; `None`/não-string = padrão.
+pub fn setting_str(db: &Db, key: &str, default: &str) -> String {
     with_conn(db, |conn| {
-        let raw: Option<String> = conn
-            .query_row("SELECT value FROM meta WHERE key='settings'", [], |r| r.get(0))
-            .optional()
-            .map_err(|e| e.to_string())?;
-        let mut v: serde_json::Value = raw
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_else(|| serde_json::json!({}));
-        if !v.is_object() {
-            v = serde_json::json!({});
-        }
-        v[key] = serde_json::Value::Bool(value);
-        conn.execute(
-            "INSERT INTO meta(key, value) VALUES('settings', ?1)
-             ON CONFLICT(key) DO UPDATE SET value=?1",
-            params![v.to_string()],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
+        Ok(read_settings(conn)?
+            .get(key)
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| default.to_string()))
     })
+    .unwrap_or_else(|_| default.to_string())
+}
+
+/// Grava um booleano no blob de configurações preservando o resto (merge).
+pub fn set_setting_bool(db: &Db, key: &str, value: bool) -> Result<(), String> {
+    set_setting_value(db, key, serde_json::Value::Bool(value))
+}
+
+/// Grava uma string no blob de configurações preservando o resto (merge).
+fn set_setting_str(db: &Db, key: &str, value: &str) -> Result<(), String> {
+    set_setting_value(db, key, serde_json::Value::String(value.to_string()))
 }
 
 #[tauri::command(async)]
@@ -792,6 +839,135 @@ pub fn settings_set(db: State<'_, Db>, value: serde_json::Value) -> Result<(), S
         .map_err(|e| e.to_string())?;
         Ok(())
     })
+}
+
+// ----------------------------------------------------------------------------
+// Sincronização por arquivo (sync_path) — o Android abre o MESMO .db via SAF
+// ----------------------------------------------------------------------------
+
+/// Caminho do arquivo de sync ("" = desligado).
+#[tauri::command(async)]
+pub fn sync_path_get(db: State<'_, Db>) -> Result<String, String> {
+    Ok(setting_str(&db, "sync_path", ""))
+}
+
+/// Define o caminho do arquivo de sync, preservando as demais configurações.
+#[tauri::command(async)]
+pub fn sync_path_set(db: State<'_, Db>, path: String) -> Result<(), String> {
+    set_setting_str(&db, "sync_path", &path)
+}
+
+/// "Impressão digital" do arquivo de sync: mtime (epoch, com subsegundo) +
+/// tamanho. É o que o check de mudança externa compara — qualquer escrita de
+/// fora muda o mtime; o tamanho pega o caso de reescrita "parecida".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SyncFingerprint {
+    mtime_secs: i64,
+    mtime_nanos: u32,
+    len: u64,
+}
+
+fn file_fingerprint(path: &str) -> Option<SyncFingerprint> {
+    let md = std::fs::metadata(path).ok()?;
+    let (mtime_secs, mtime_nanos) = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| (d.as_secs() as i64, d.subsec_nanos()))
+        .unwrap_or((0, 0));
+    Some(SyncFingerprint {
+        mtime_secs,
+        mtime_nanos,
+        len: md.len(),
+    })
+}
+
+fn read_fp(conn: &Connection) -> Result<Option<SyncFingerprint>, String> {
+    let raw: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key='sync_fp'", [], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some(raw) = raw else { return Ok(None) };
+    let v: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    Ok(Some(SyncFingerprint {
+        mtime_secs: v.get("mtimeSecs").and_then(|x| x.as_i64()).unwrap_or(0),
+        mtime_nanos: v.get("mtimeNanos").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
+        len: v.get("len").and_then(|x| x.as_u64()).unwrap_or(0),
+    }))
+}
+
+fn write_fp(conn: &Connection, fp: &SyncFingerprint) -> Result<(), String> {
+    let raw = serde_json::json!({
+        "mtimeSecs": fp.mtime_secs,
+        "mtimeNanos": fp.mtime_nanos,
+        "len": fp.len,
+    })
+    .to_string();
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES('sync_fp', ?1)
+         ON CONFLICT(key) DO UPDATE SET value=?1",
+        params![raw],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// `true` se o arquivo de sync mudou FORA do app desde a última cópia nossa.
+/// Sem sync_path, sem arquivo ou sem estado registrado (1ª vez) → `false`: não
+/// há o que comparar nem o que recarregar.
+fn external_changed(conn: &Connection, sync_path: &str) -> Result<bool, String> {
+    if sync_path.is_empty() {
+        return Ok(false);
+    }
+    let Some(current) = file_fingerprint(sync_path) else {
+        return Ok(false); // arquivo apagado: nada pra recarregar
+    };
+    let Some(known) = read_fp(conn)? else {
+        return Ok(false); // nunca copiamos: a 1ª sync não tem "nosso" estado
+    };
+    Ok(current != known)
+}
+
+#[tauri::command(async)]
+pub fn sync_external_changed(db: State<'_, Db>) -> Result<bool, String> {
+    with_conn(&db, |conn| {
+        let v = read_settings(conn)?;
+        let path = v
+            .get("sync_path")
+            .and_then(|p| p.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        external_changed(conn, &path)
+    })
+}
+
+/// Checkpoint WAL + cópia do banco pro sync_path, registrando a impressão
+/// digital do arquivo copiado ("nosso" estado, que o check compara). Tudo na
+/// MESMA trava: o tick de lembretes não pode escrever entre o checkpoint e a
+/// cópia (senão o arquivo ficaria sem as linhas mais novas). No-op sem
+/// sync_path. Chamado pelo comando `sync_now` (front) e por saídas do Rust
+/// que escrevem por fora da store (snooze, tick, exit).
+pub fn autosave(app: &tauri::AppHandle, db: &Db) -> Result<(), String> {
+    let path = setting_str(db, "sync_path", "");
+    if path.is_empty() {
+        return Ok(());
+    }
+    let src = db_path(app)?;
+    with_conn(db, |conn| {
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        std::fs::copy(&src, &path).map_err(|e| format!("falha ao copiar pro sync: {}", e))?;
+        if let Some(fp) = file_fingerprint(&path) {
+            write_fp(conn, &fp)?;
+        }
+        Ok(())
+    })
+}
+
+/// Grava o banco atual no sync_path na hora (o front usa no `forceSave` e no
+/// flush do autosave com debounce de 2s).
+#[tauri::command(async)]
+pub fn sync_now(app: tauri::AppHandle, db: State<'_, Db>) -> Result<(), String> {
+    autosave(&app, &db)
 }
 
 // ----------------------------------------------------------------------------
@@ -831,6 +1007,18 @@ pub fn db_import(app: tauri::AppHandle, db: State<'_, Db>, path: String) -> Resu
     let _ = std::fs::copy(&dest, &bak);
     std::fs::copy(&path, &dest).map_err(|e| format!("falha ao importar: {}", e))?;
     open(&app, &db)?;
+    // Se o importado É o arquivo de sync (botão "Recarregar do disco"), o
+    // estado dele passa a ser o "nosso" — senão a 1ª sync seguinte acusaria
+    // mudança externa à toa.
+    let sync_path = setting_str(&db, "sync_path", "");
+    if !sync_path.is_empty() {
+        let same = std::fs::canonicalize(&path).ok() == std::fs::canonicalize(&sync_path).ok();
+        if same {
+            if let Some(fp) = file_fingerprint(&path) {
+                let _ = with_conn(&db, |conn| write_fp(conn, &fp));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -889,6 +1077,7 @@ mod tests {
         assert_eq!(version(&conn), SCHEMA_VERSION);
         assert!(has_column(&conn, "events", "series_id").unwrap());
         assert!(has_column(&conn, "events", "recurrence_id").unwrap());
+        assert!(has_column(&conn, "reminders", "snoozed").unwrap());
 
         // O evento antigo continua lá, inteiro, e virou "série normal" (campos
         // novos vazios) — comportamento idêntico ao de antes da migração.
@@ -932,5 +1121,110 @@ mod tests {
         init_schema(&conn).unwrap();
         assert_eq!(version(&conn), SCHEMA_VERSION);
         assert!(has_column(&conn, "events", "series_id").unwrap());
+        assert!(has_column(&conn, "reminders", "snoozed").unwrap());
+    }
+
+    /// O adiado sobrevive ao `reminders_replace` (que só apaga os pendentes
+    /// normais) e dispara quando o horário novo vence, zerando o snoozed.
+    #[test]
+    fn snoozed_sobrevive_ao_replace_e_dispara() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO reminders(id, kind, ref_id, occ, title, body, fire_at, fired, snoozed)
+             VALUES('event:e1:occ:60','event','e1','occ','Reunião','',1000,0,0)",
+            [],
+        )
+        .unwrap();
+
+        let db = Db(Arc::new(Mutex::new(Some(conn))));
+
+        // Adia: fired=0 de novo + snoozed=1, com novo horário.
+        snooze(&db, "event:e1:occ:60", 5).unwrap();
+        let (snoozed, fire_at): (i64, i64) = db
+            .0
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .query_row(
+                "SELECT snoozed, fire_at FROM reminders WHERE id='event:e1:occ:60'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(snoozed, 1);
+
+        // Replace vazio (janela rolante sem nada): só o ADIADO sobra — o mesmo
+        // DELETE que o reminders_replace faz.
+        with_conn(&db, |conn| {
+            conn.execute("DELETE FROM reminders WHERE fired=0 AND snoozed=0", [])
+                .unwrap();
+            Ok(())
+        })
+        .unwrap();
+        let n: i64 = db
+            .0
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM reminders", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+
+        // O tick colhe quando o horário novo vence e zera o snoozed.
+        let due = take_due_reminders(&db, fire_at);
+        assert_eq!(due.len(), 1);
+        let (fired, snoozed): (i64, i64) = db
+            .0
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .query_row(
+                "SELECT fired, snoozed FROM reminders WHERE id='event:e1:occ:60'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(fired, 1);
+        assert_eq!(snoozed, 0);
+    }
+
+    /// Check de mudança externa: registrado o fingerprint da NOSSA cópia,
+    /// mexer no arquivo de fora passa a ser detectado; intacto, não.
+    #[test]
+    fn mudanca_externa_e_detectada_pelo_fingerprint() {
+        let conn = Connection::open_in_memory().unwrap();
+        init_schema(&conn).unwrap();
+
+        let dir = std::env::temp_dir().join(format!("localagenda-sync-test-{}", now_ms()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("agenda.db");
+        let path = file.to_str().unwrap().to_string();
+
+        // Simula a NOSSA 1ª cópia: escreve + registra o fingerprint.
+        std::fs::write(&file, b"versao local").unwrap();
+        let fp = file_fingerprint(&path).unwrap();
+        write_fp(&conn, &fp).unwrap();
+        assert!(!external_changed(&conn, &path).unwrap());
+
+        // Mexe por fora (conteúdo E mtime novos) → detectado.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&file, b"versao do android").unwrap();
+        assert!(external_changed(&conn, &path).unwrap());
+
+        // Nossa cópia de novo (re-registra) → volta a ser "igual".
+        let fp2 = file_fingerprint(&path).unwrap();
+        write_fp(&conn, &fp2).unwrap();
+        assert!(!external_changed(&conn, &path).unwrap());
+
+        // Sem arquivo → nada pra recarregar, sem alarme falso.
+        std::fs::remove_file(&file).unwrap();
+        assert!(!external_changed(&conn, &path).unwrap());
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

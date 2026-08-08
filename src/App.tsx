@@ -7,6 +7,7 @@ import { EventModal } from "./components/EventModal";
 import { MonthView } from "./components/MonthView";
 import { SettingsModal } from "./components/SettingsModal";
 import { Sidebar } from "./components/Sidebar";
+import { SyncConflictDialog } from "./components/SyncConflictDialog";
 import { TasksPanel } from "./components/TasksPanel";
 import { TaskModal } from "./components/TaskModal";
 import { Toasts } from "./components/Toasts";
@@ -30,7 +31,7 @@ function b64ToText(b64: string): string {
 }
 
 export default function App() {
-  const { loaded, load, view, cursor, settings, go, goToday, setView } = useStore();
+  const { loaded, load, view, cursor, settings, go, goToday, setView, externalChange } = useStore();
   const ui = useUi();
 
   // Carrega o banco na inicialização.
@@ -223,6 +224,7 @@ export default function App() {
       {ui.showSettings && <SettingsModal />}
       {ui.showAi && <AiPanel />}
       {ui.showClock && <ClockModal />}
+      {externalChange && <SyncConflictDialog />}
       <Toasts />
     </div>
   );
