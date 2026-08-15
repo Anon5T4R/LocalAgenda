@@ -1,6 +1,6 @@
 [package]
 name = "localagenda"
-version = "0.6.9"
+version = "0.6.10"
 description = "LocalAgenda — calendário, tarefas e lembretes 100% offline, com IA local"
 authors = ["Taylor"]
 edition = "2021"
