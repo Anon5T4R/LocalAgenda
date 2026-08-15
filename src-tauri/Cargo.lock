@@ -2016,6 +2016,7 @@ name = "localagenda"
 version = "0.6.10"
 dependencies = [
  "base64 0.22.1",
+ "gtk",
  "rusqlite",
  "serde",
  "serde_json",

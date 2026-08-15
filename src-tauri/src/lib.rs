@@ -15,6 +15,7 @@ use db::Db;
 
 /// Caminho passado no launch (abrir um `.ics` pelo "Abrir com"), se houver.
 #[tauri::command(async)]
+
 fn get_startup_file() -> Option<String> {
     std::env::args()
         .skip(1)
@@ -240,6 +241,22 @@ fn open_main(app: &tauri::AppHandle) {
     }
 }
 
+/// Contorna a titlebar quebrada do tao <= 0.35 no GNOME/Wayland (CSD propia
+/// com regiao de input morta — causa e fix em tao#1218, so via tauri 2.12):
+/// troca por uma HeaderBar comum com layout forcado min/max/fechar, ANTES do
+/// primeiro map. Sai junto com o upgrade ao tao 0.36 (wry 0.56).
+#[cfg(target_os = "linux")]
+fn instalar_csd_limpa(w: &tauri::WebviewWindow) {
+    use gtk::prelude::*;
+    let Ok(gw) = w.gtk_window() else { return };
+    let header = gtk::HeaderBar::new();
+    header.set_show_close_button(true);
+    header.set_decoration_layout(Some("menu:minimize,maximize,close"));
+    header.set_title(Some("LocalAgenda"));
+    header.show();
+    gw.set_titlebar(Some(&header));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // ── Contorno da tela branca do webkit: REMOVIDO, e o porquê importa ──────
@@ -289,6 +306,11 @@ pub fn run() {
         .manage(Db::default())
         .manage(Mutex::new(llm::LlmState::default()))
         .setup(|app| {
+
+            #[cfg(target_os = "linux")]
+            if let Some(w) = app.get_webview_window("main") {
+                instalar_csd_limpa(&w);
+            }
             // Abre o banco (app_data/agenda.db) e semeia o calendário padrão.
             let db = app.state::<Db>().inner().clone();
             if let Err(e) = db::open(app.handle(), &db) {
